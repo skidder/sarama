@@ -1,8 +1,21 @@
 package sarama
 
+type topicPartitionAssignment struct {
+	Topic     string
+	Partition int32
+}
+
+type StickyAssignorUserData interface {
+	partitions() []topicPartitionAssignment
+	hasGeneration() bool
+	generation() int
+}
+
 //StickyAssignorUserDataV0 holds topic partition information for an assignment
 type StickyAssignorUserDataV0 struct {
 	Topics map[string][]int32
+
+	topicPartitions []topicPartitionAssignment
 }
 
 func (m *StickyAssignorUserDataV0) encode(pe packetEncoder) error {
@@ -18,7 +31,6 @@ func (m *StickyAssignorUserDataV0) encode(pe packetEncoder) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -38,14 +50,20 @@ func (m *StickyAssignorUserDataV0) decode(pd packetDecoder) (err error) {
 			return
 		}
 	}
-
+	m.topicPartitions = populateTopicPartitions(m.Topics)
 	return nil
 }
+
+func (m *StickyAssignorUserDataV0) partitions() []topicPartitionAssignment { return m.topicPartitions }
+func (m *StickyAssignorUserDataV0) hasGeneration() bool                    { return false }
+func (m *StickyAssignorUserDataV0) generation() int                        { return -1 }
 
 //StickyAssignorUserDataV1 holds topic partition information for an assignment
 type StickyAssignorUserDataV1 struct {
 	Topics     map[string][]int32
 	Generation int32
+
+	topicPartitions []topicPartitionAssignment
 }
 
 func (m *StickyAssignorUserDataV1) encode(pe packetEncoder) error {
@@ -63,7 +81,6 @@ func (m *StickyAssignorUserDataV1) encode(pe packetEncoder) error {
 	}
 
 	pe.putInt32(m.Generation)
-
 	return nil
 }
 
@@ -88,6 +105,20 @@ func (m *StickyAssignorUserDataV1) decode(pd packetDecoder) (err error) {
 	if err != nil {
 		return err
 	}
-
+	m.topicPartitions = populateTopicPartitions(m.Topics)
 	return nil
+}
+
+func (m *StickyAssignorUserDataV1) partitions() []topicPartitionAssignment { return m.topicPartitions }
+func (m *StickyAssignorUserDataV1) hasGeneration() bool                    { return true }
+func (m *StickyAssignorUserDataV1) generation() int                        { return int(m.Generation) }
+
+func populateTopicPartitions(topics map[string][]int32) []topicPartitionAssignment {
+	topicPartitions := make([]topicPartitionAssignment, 0)
+	for topic, partitions := range topics {
+		for _, partition := range partitions {
+			topicPartitions = append(topicPartitions, topicPartitionAssignment{Topic: topic, Partition: partition})
+		}
+	}
+	return topicPartitions
 }
