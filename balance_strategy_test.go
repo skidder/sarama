@@ -1489,7 +1489,6 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	topics["topic2"] = []int32{0, 1, 2}
 
 	plan2, err := s.Plan(members, topics)
-
 	if err != nil {
 		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 error = %v", err)
 		return
@@ -1503,6 +1502,32 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
+
+	// PLAN 3
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2"},
+		UserData: encodeSubscriberPlan(t, plan2["consumer1"]),
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2"},
+		UserData: encodeSubscriberPlan(t, plan2["consumer2"]),
+	}
+	delete(topics, "topic1")
+
+	plan3, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan3) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 is unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan3)
 }
 
 func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMemberMetadata, plan BalanceStrategyPlan) {
@@ -1586,6 +1611,7 @@ func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMe
 	}
 }
 
+// Produces the intersection of two slices
 // From https://github.com/juliangruber/go-intersect
 func Hash(a interface{}, b interface{}) []interface{} {
 	set := make([]interface{}, 0)

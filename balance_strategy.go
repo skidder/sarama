@@ -220,15 +220,16 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 		}
 
 		// otherwise (the consumer still exists)
-		for i, partition := range partitions {
+		updatedPartitions := deepCopyPartitions(partitions)
+		for _, partition := range partitions {
 			if _, exists := partition2AllPotentialConsumers[partition]; !exists {
 				// if this topic partition of this consumer no longer exists remove it from currentAssignment of the consumer
-				partitions = removeIndexFromPartitionSlice(partitions, i)
+				updatedPartitions = removeTopicPartitionFromMemberAssignments(updatedPartitions, partition)
 				delete(currentPartitionConsumer, partition)
 			} else if _, exists := topics[partition.Topic]; !exists {
 				// if this partition cannot remain assigned to its current consumer because the consumer
 				// is no longer subscribed to its topic remove it from currentAssignment of the consumer
-				partitions = removeIndexFromPartitionSlice(partitions, i)
+				updatedPartitions = removeTopicPartitionFromMemberAssignments(updatedPartitions, partition)
 			} else {
 				// otherwise, remove the topic partition from those that need to be assigned only if
 				// its current consumer is still subscribed to its topic (because it is already assigned
@@ -236,6 +237,7 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 				unassignedPartitions = removeTopicPartitionFromMemberAssignments(unassignedPartitions, partition)
 			}
 		}
+		currentAssignment[memberID] = updatedPartitions
 	}
 
 	// at this point we have preserved all valid topic partition to consumer assignments and removed
@@ -588,7 +590,6 @@ func removeTopicPartitionFromMemberAssignments(assignments []topicPartitionAssig
 	for i, assignment := range assignments {
 		if assignment == topic {
 			assignments = append(assignments[:i], assignments[i+1:]...)
-			break
 		}
 	}
 	return assignments
