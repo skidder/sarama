@@ -1,8 +1,10 @@
 package sarama
 
 import (
+	"fmt"
 	"math"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -523,7 +525,7 @@ func Test_sortMemberIDsByPartitionAssignments(t *testing.T) {
 					},
 				},
 			},
-			want: []string{"c3", "c2", "c1"},
+			want: []string{"c1", "c2", "c3"},
 		},
 	}
 	for _, tt := range tests {
@@ -1337,6 +1339,7 @@ func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 				t.Error("stickyBalanceStrategy.Plan() unbalanced")
 				return
 			}
+			verifyValidityAndBalance(t, tt.args.members, got)
 		})
 	}
 }
@@ -1362,19 +1365,12 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
 		return
 	}
+	verifyValidityAndBalance(t, members, plan1)
 
 	// PLAN 2
-	userDataBytes, err := encode(&StickyAssignorUserDataV1{
-		Topics:     plan1["consumer1"],
-		Generation: DefaultGeneration,
-	}, nil)
-	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
-		return
-	}
 	members["consumer1"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic"},
-		UserData: userDataBytes,
+		UserData: encodeSubscriberPlan(t, plan1["consumer1"]),
 	}
 	members["consumer2"] = ConsumerGroupMemberMetadata{
 		Topics: []string{"topic"},
@@ -1392,20 +1388,13 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
 		return
 	}
+	verifyValidityAndBalance(t, members, plan2)
 
 	// PLAN 3
-	userDataBytes, err = encode(&StickyAssignorUserDataV1{
-		Topics:     plan2["consumer2"],
-		Generation: DefaultGeneration,
-	}, nil)
-	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
-		return
-	}
 	delete(members, "consumer1")
 	members["consumer2"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic"},
-		UserData: userDataBytes,
+		UserData: encodeSubscriberPlan(t, plan2["consumer2"]),
 	}
 	plan3, err := s.Plan(members, topics)
 	if err != nil {
@@ -1420,6 +1409,215 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 not sticky")
 		return
 	}
+	verifyValidityAndBalance(t, members, plan3)
+}
+
+func Test_stickyBalanceStrategy_Plan_PoorRoundRobinAssignmentScenario(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic2", "topic3", "topic4", "topic5"},
+		},
+		"consumer2": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic3", "topic5"},
+		},
+		"consumer3": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic3", "topic5"},
+		},
+		"consumer4": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic2", "topic3", "topic4", "topic5"},
+		},
+	}
+	topics := make(map[string][]int32, 5)
+	for i := 1; i <= 5; i++ {
+		partitions := make([]int32, i%2+1)
+		for j := 0; j < i%2+1; j++ {
+			partitions[j] = int32(j)
+		}
+		topics[fmt.Sprintf("topic%d", i)] = partitions
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+}
+
+func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1"},
+		},
+		"consumer2": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1"},
+		},
+	}
+	topics := map[string][]int32{
+		"topic1": []int32{0, 1, 2},
+	}
+	plan1, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan1) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan1)
+
+	// PLAN 2
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2"},
+		UserData: encodeSubscriberPlan(t, plan1["consumer1"]),
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2"},
+		UserData: encodeSubscriberPlan(t, plan1["consumer2"]),
+	}
+	topics["topic2"] = []int32{0, 1, 2}
+
+	plan2, err := s.Plan(members, topics)
+
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 is unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan2)
+}
+
+func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMemberMetadata, plan BalanceStrategyPlan) {
+	size := len(consumers)
+	if size != len(plan) {
+		t.Errorf("Subscription size (%d) not equal to plan size (%d)", size, len(plan))
+		t.FailNow()
+	}
+
+	members := make([]string, size)
+	i := 0
+	for memberID := range consumers {
+		members[i] = memberID
+		i++
+	}
+	sort.Strings(members)
+
+	for i, memberID := range members {
+		for assignedTopic := range plan[memberID] {
+			found := false
+			for _, assignableTopic := range consumers[memberID].Topics {
+				if assignableTopic == assignableTopic {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("Consumer %s had assigned topic %s that wasn't in the list of assignable topics", memberID, assignedTopic)
+				t.FailNow()
+			}
+		}
+
+		// skip last consumer
+		if i == len(members)-1 {
+			continue
+		}
+
+		consumerAssignments := make([]topicPartitionAssignment, 0)
+		for topic, partitions := range plan[memberID] {
+			for _, partition := range partitions {
+				consumerAssignments = append(consumerAssignments, topicPartitionAssignment{Topic: topic, Partition: partition})
+			}
+		}
+
+		for j := i + 1; j < size; j++ {
+			otherConsumer := members[j]
+			otherConsumerAssignments := make([]topicPartitionAssignment, 0)
+			for topic, partitions := range plan[otherConsumer] {
+				for _, partition := range partitions {
+					otherConsumerAssignments = append(otherConsumerAssignments, topicPartitionAssignment{Topic: topic, Partition: partition})
+				}
+			}
+			intersection := Hash(consumerAssignments, otherConsumerAssignments)
+			if len(intersection) > 0 {
+				t.Errorf("Consumers %s nad %s have common partitions assigned to them: %v", memberID, otherConsumer, intersection)
+				t.FailNow()
+			}
+
+			if math.Abs(float64(len(consumerAssignments)-len(otherConsumerAssignments))) <= 1 {
+				continue
+			}
+
+			if len(consumerAssignments) > len(otherConsumerAssignments) {
+				for _, topic := range consumerAssignments {
+					if _, exists := plan[otherConsumer][topic.Topic]; exists {
+						t.Errorf("Some partitions can be moved from %s to %s to achieve a better balance, %s has %d assignments, and %s has %d assignments", otherConsumer, memberID, memberID, len(consumerAssignments), otherConsumer, len(otherConsumerAssignments))
+						t.FailNow()
+					}
+				}
+			}
+
+			if len(otherConsumerAssignments) > len(consumerAssignments) {
+				for _, topic := range otherConsumerAssignments {
+					if _, exists := plan[memberID][topic.Topic]; exists {
+						t.Errorf("Some partitions can be moved from %s to %s to achieve a better balance, %s has %d assignments, and %s has %d assignments", memberID, otherConsumer, otherConsumer, len(otherConsumerAssignments), memberID, len(consumerAssignments))
+						t.FailNow()
+					}
+				}
+			}
+		}
+	}
+}
+
+// From https://github.com/juliangruber/go-intersect
+func Hash(a interface{}, b interface{}) []interface{} {
+	set := make([]interface{}, 0)
+	hash := make(map[interface{}]bool)
+	av := reflect.ValueOf(a)
+	bv := reflect.ValueOf(b)
+
+	for i := 0; i < av.Len(); i++ {
+		el := av.Index(i).Interface()
+		hash[el] = true
+	}
+
+	for i := 0; i < bv.Len(); i++ {
+		el := bv.Index(i).Interface()
+		if _, found := hash[el]; found {
+			set = append(set, el)
+		}
+	}
+
+	return set
+}
+
+func encodeSubscriberPlan(t *testing.T, assignments map[string][]int32) []byte {
+	userDataBytes, err := encode(&StickyAssignorUserDataV1{
+		Topics:     assignments,
+		Generation: DefaultGeneration,
+	}, nil)
+	if err != nil {
+		t.Errorf("encodeSubscriberPlan error = %v", err)
+		t.FailNow()
+	}
+	return userDataBytes
 }
 
 // verify that the plan is fully balanced

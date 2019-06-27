@@ -244,13 +244,20 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 
 	// a descending sorted set of consumers based on how many topic partitions are already assigned to them
 	sortedCurrentSubscriptions := sortMemberIDsByPartitionAssignments(currentAssignment)
+	pretty.Print(currentAssignment)
+	pretty.Print(sortedCurrentSubscriptions)
+	fmt.Println("Running balance")
 	balance(s.movements, currentAssignment, prevAssignment, sortedPartitions, unassignedPartitions, sortedCurrentSubscriptions, consumer2AllPotentialPartitions, partition2AllPotentialConsumers, currentPartitionConsumer)
 
 	// Assemble plan
 	plan := make(BalanceStrategyPlan)
 	for memberID, assignments := range currentAssignment {
-		for _, assignment := range assignments {
-			plan.Add(memberID, assignment.Topic, assignment.Partition)
+		if len(assignments) == 0 {
+			plan[memberID] = make(map[string][]int32, 0)
+		} else {
+			for _, assignment := range assignments {
+				plan.Add(memberID, assignment.Topic, assignment.Partition)
+			}
 		}
 	}
 	return plan, nil
@@ -311,7 +318,7 @@ func balance(movements partitionMovements, currentAssignment map[string][]topicP
 	for consumer, assignments := range fixedAssignments {
 		currentAssignment[consumer] = assignments
 
-		// XXXX This might not be necessary, commenting out for now
+		// XXXX This might be unnecessary, commenting out for now
 		// sortedCurrentSubscriptions = append(sortedCurrentSubscriptions, consumer)
 	}
 }
@@ -336,8 +343,8 @@ func getBalanceScore(assignment map[string][]topicPartitionAssignment) int {
 }
 
 func isBalanced(currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, allSubscriptions map[string][]topicPartitionAssignment) bool {
-	min := len(currentAssignment[sortedCurrentSubscriptions[len(sortedCurrentSubscriptions)-1]])
-	max := len(currentAssignment[sortedCurrentSubscriptions[0]])
+	min := len(currentAssignment[sortedCurrentSubscriptions[0]])
+	max := len(currentAssignment[sortedCurrentSubscriptions[len(sortedCurrentSubscriptions)-1]])
 	fmt.Printf("Checking balance: min=%d, max=%d\n", min, max)
 	if min >= max-1 {
 		// if minimum and maximum numbers of partitions assigned to consumers differ by at most one return true
@@ -449,9 +456,7 @@ func performReassignments(movements partitionMovements, reassignablePartitions [
 }
 
 func reassignPartitionToNewConsumer(movements partitionMovements, partition topicPartitionAssignment, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string, consumer2AllPotentialPartitions map[string][]topicPartitionAssignment) []string {
-	// find the new consumer, evaluating from right to left
-	for i := len(sortedCurrentSubscriptions) - 1; i >= 0; i-- {
-		anotherConsumer := sortedCurrentSubscriptions[i]
+	for _, anotherConsumer := range sortedCurrentSubscriptions {
 		if memberAssignmentsIncludeTopicPartition(consumer2AllPotentialPartitions[anotherConsumer], partition) {
 			fmt.Printf("Reassigning partition %v to new consumer: %s\n", partition, anotherConsumer)
 			return reassignPartition(movements, partition, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer, anotherConsumer)
@@ -663,13 +668,13 @@ func sortPartitions(currentAssignment map[string][]topicPartitionAssignment, par
 }
 
 func sortMemberIDsByPartitionAssignments(assignments map[string][]topicPartitionAssignment) []string {
-	// sort the members by the number of partition assignments in descending order
+	// sort the members by the number of partition assignments in ascending order
 	sortedMemberIDs := make([]string, 0, len(assignments))
 	for memberID := range assignments {
 		sortedMemberIDs = append(sortedMemberIDs, memberID)
 	}
 	sort.SliceStable(sortedMemberIDs, func(i, j int) bool {
-		return len(assignments[sortedMemberIDs[i]]) > len(assignments[sortedMemberIDs[j]])
+		return len(assignments[sortedMemberIDs[i]]) < len(assignments[sortedMemberIDs[j]])
 	})
 	return sortedMemberIDs
 }
