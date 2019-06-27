@@ -1752,6 +1752,116 @@ func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving
 	verifyValidityAndBalance(t, members, plan2)
 }
 
+func Test_stickyBalanceStrategy_Plan_NewSubscription(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	members := make(map[string]ConsumerGroupMemberMetadata, 20)
+	for i := 0; i < 3; i++ {
+		topics := make([]string, 0)
+		for j := i; j <= 3*i-2; j++ {
+			topics = append(topics, fmt.Sprintf("topic%d", j))
+		}
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: topics}
+	}
+	topics := make(map[string][]int32, 5)
+	for i := 1; i < 5; i++ {
+		topics[fmt.Sprintf("topic%d", i)] = []int32{0}
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+
+	members["consumer0"] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
+
+	plan2, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan2)
+}
+
+func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChanges(t *testing.T) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	minNumConsumers := 20
+	maxNumConsumers := 40
+	minNumTopics := 10
+	maxNumTopics := 20
+
+	for round := 0; round < 100; round++ {
+		numTopics := minNumTopics + r.Intn(maxNumTopics-minNumTopics)
+		topics := make([]string, numTopics)
+		partitionsPerTopic := make(map[string][]int32, numTopics)
+		for i := 0; i < numTopics; i++ {
+			topicName := fmt.Sprintf("topic%d", i)
+			topics[i] = topicName
+			partitions := make([]int32, maxNumTopics)
+			for j := 0; j < maxNumTopics; j++ {
+				partitions[j] = int32(j)
+			}
+			partitionsPerTopic[topicName] = partitions
+		}
+
+		numConsumers := minNumConsumers + r.Intn(maxNumConsumers-minNumConsumers)
+		members := make(map[string]ConsumerGroupMemberMetadata, numConsumers)
+		for i := 0; i < numConsumers; i++ {
+			sub := getRandomSublist(r, topics)
+			sort.Strings(sub)
+			members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: sub}
+		}
+
+		s := &stickyBalanceStrategy{}
+		plan, err := s.Plan(members, partitionsPerTopic)
+		if err != nil {
+			t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+			return
+		}
+		if !isFullyBalanced(plan) {
+			t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+			return
+		}
+		verifyValidityAndBalance(t, members, plan)
+
+		// PLAN 2
+		membersPlan2 := make(map[string]ConsumerGroupMemberMetadata, numConsumers)
+		for i := 0; i < numConsumers; i++ {
+			sub := getRandomSublist(r, topics)
+			sort.Strings(sub)
+			membersPlan2[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
+				Topics:   sub,
+				UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+			}
+		}
+		plan2, err := s.Plan(membersPlan2, partitionsPerTopic)
+		if err != nil {
+			t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+			return
+		}
+		if !isFullyBalanced(plan2) {
+			t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+			return
+		}
+		if !s.movements.isSticky() {
+			t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+			return
+		}
+		verifyValidityAndBalance(t, membersPlan2, plan2)
+	}
+}
+
 func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMemberMetadata, plan BalanceStrategyPlan) {
 	size := len(consumers)
 	if size != len(plan) {
@@ -1868,7 +1978,8 @@ func encodeSubscriberPlan(t *testing.T, assignments map[string][]int32) []byte {
 	return userDataBytes
 }
 
-// verify that the plan is fully balanced
+// verify that the plan is fully balanced, assumes that all consumers can
+// consume from the same set of topics
 func isFullyBalanced(plan BalanceStrategyPlan) bool {
 	min := math.MaxInt32
 	max := math.MinInt32
@@ -1885,4 +1996,23 @@ func isFullyBalanced(plan BalanceStrategyPlan) bool {
 		}
 	}
 	return (max - min) <= 1
+}
+
+func getRandomSublist(r *rand.Rand, s []string) []string {
+	howManyToRemove := r.Intn(len(s))
+	allEntriesMap := make(map[int]string)
+	for i, s := range s {
+		allEntriesMap[i] = s
+	}
+	for i := 0; i < howManyToRemove; i++ {
+		delete(allEntriesMap, r.Intn(len(allEntriesMap)))
+	}
+
+	subList := make([]string, len(allEntriesMap))
+	i := 0
+	for _, s := range allEntriesMap {
+		subList[i] = s
+		i++
+	}
+	return subList
 }
