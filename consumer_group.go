@@ -322,10 +322,20 @@ func (c *consumerGroup) syncGroupRequest(coordinator *Broker, plan BalanceStrate
 		GenerationId: generationID,
 	}
 	for memberID, topics := range plan {
-		err := req.AddGroupAssignmentMember(memberID, &ConsumerGroupMemberAssignment{
-			Topics: topics,
-		})
-		if err != nil {
+		assignment := &ConsumerGroupMemberAssignment{Topics: topics}
+
+		// Include topic assignments in group-assignment userdata for each consumer-group member
+		if c.config.Consumer.Group.Rebalance.Strategy == BalanceStrategySticky {
+			userDataBytes, err := encode(&StickyAssignorUserDataV1{
+				Topics:     topics,
+				Generation: generationID,
+			}, nil)
+			if err != nil {
+				return nil, err
+			}
+			assignment.UserData = userDataBytes
+		}
+		if err := req.AddGroupAssignmentMember(memberID, assignment); err != nil {
 			return nil, err
 		}
 	}
