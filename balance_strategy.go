@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DefaultGeneration = -1
+	defaultGeneration = -1
 )
 
 // BalanceStrategyPlan is the results of any BalanceStrategy.Plan attempt.
@@ -787,10 +787,10 @@ func prepopulateCurrentAssignments(members map[string]ConsumerGroupMemberMetadat
 						consumers[consumerUserData.generation()] = memberID
 					}
 				} else {
-					consumers[DefaultGeneration] = memberID
+					consumers[defaultGeneration] = memberID
 				}
 			} else {
-				generation := DefaultGeneration
+				generation := defaultGeneration
 				if consumerUserData.hasGeneration() {
 					generation = consumerUserData.generation()
 				}

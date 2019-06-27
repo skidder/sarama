@@ -1530,6 +1530,110 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	verifyValidityAndBalance(t, members, plan3)
 }
 
+func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := make(map[string]ConsumerGroupMemberMetadata, 20)
+	for i := 0; i < 20; i++ {
+		topics := make([]string, 20)
+		for j := 0; j < 20; j++ {
+			topics[j] = fmt.Sprintf("topic%d", j)
+		}
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: topics}
+	}
+	topics := make(map[string][]int32, 20)
+	for i := 0; i < 20; i++ {
+		partitions := make([]int32, 20)
+		for j := 0; j < 20; j++ {
+			partitions[j] = int32(j)
+		}
+		topics[fmt.Sprintf("topic%d", i)] = partitions
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+
+	for i := 0; i < 20; i++ {
+		topics := make([]string, 20)
+		for j := 0; j < 20; j++ {
+			topics[j] = fmt.Sprintf("topic%d", j)
+		}
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
+			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
+			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+		}
+	}
+	delete(members, "consumer10")
+
+	plan2, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan2)
+}
+
+func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := make(map[string]ConsumerGroupMemberMetadata)
+	for i := 0; i < 10; i++ {
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
+	}
+	partitions := make([]int32, 20)
+	for j := 0; j < 20; j++ {
+		partitions[j] = int32(j)
+	}
+	topics := map[string][]int32{"topic1": partitions}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+
+	// add a new consumer
+	members["consumer10"] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
+
+	plan2, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan2)
+}
+
 func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMemberMetadata, plan BalanceStrategyPlan) {
 	size := len(consumers)
 	if size != len(plan) {
@@ -1637,7 +1741,7 @@ func Hash(a interface{}, b interface{}) []interface{} {
 func encodeSubscriberPlan(t *testing.T, assignments map[string][]int32) []byte {
 	userDataBytes, err := encode(&StickyAssignorUserDataV1{
 		Topics:     assignments,
-		Generation: DefaultGeneration,
+		Generation: defaultGeneration,
 	}, nil)
 	if err != nil {
 		t.Errorf("encodeSubscriberPlan error = %v", err)
