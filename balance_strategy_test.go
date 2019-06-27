@@ -1360,11 +1360,11 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	}
 	plan1, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan1) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan1)
@@ -1379,15 +1379,15 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	}
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan2) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 is unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 is unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
@@ -1400,15 +1400,15 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	}
 	plan3, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 3 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan3) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 is unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 3 is unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 3 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan3)
@@ -1443,11 +1443,11 @@ func Test_stickyBalanceStrategy_Plan_PoorRoundRobinAssignmentScenario(t *testing
 
 	plan, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan)
@@ -1470,11 +1470,11 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	}
 	plan1, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan1) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan1)
@@ -1492,15 +1492,15 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan2) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 is unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 is unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
@@ -1518,15 +1518,15 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 
 	plan3, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 3 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan3) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 is unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 3 is unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 3 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan3)
@@ -1555,11 +1555,11 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testi
 
 	plan, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan)
@@ -1578,15 +1578,15 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testi
 
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan2) {
-		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
@@ -1608,11 +1608,11 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testin
 
 	plan, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan)
@@ -1622,15 +1622,15 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testin
 
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan2) {
-		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
@@ -1659,11 +1659,11 @@ func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 
 	plan, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan)
@@ -1678,15 +1678,15 @@ func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan2) {
-		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
@@ -1717,11 +1717,11 @@ func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving
 
 	plan, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan) {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan)
@@ -1738,15 +1738,15 @@ func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving
 
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan2) {
-		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
@@ -1770,7 +1770,7 @@ func Test_stickyBalanceStrategy_Plan_NewSubscription(t *testing.T) {
 
 	plan, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
 	verifyValidityAndBalance(t, members, plan)
@@ -1779,15 +1779,15 @@ func Test_stickyBalanceStrategy_Plan_NewSubscription(t *testing.T) {
 
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
-		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 		return
 	}
 	if !isFullyBalanced(plan2) {
-		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
-		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
@@ -1826,11 +1826,11 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChang
 		s := &stickyBalanceStrategy{}
 		plan, err := s.Plan(members, partitionsPerTopic)
 		if err != nil {
-			t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+			t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 			return
 		}
 		if !isFullyBalanced(plan) {
-			t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+			t.Error("stickyBalanceStrategy.Plan() unbalanced")
 			return
 		}
 		verifyValidityAndBalance(t, members, plan)
@@ -1847,15 +1847,15 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChang
 		}
 		plan2, err := s.Plan(membersPlan2, partitionsPerTopic)
 		if err != nil {
-			t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+			t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
 			return
 		}
 		if !isFullyBalanced(plan2) {
-			t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+			t.Error("stickyBalanceStrategy.Plan() plan 2 unbalanced")
 			return
 		}
 		if !s.movements.isSticky() {
-			t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+			t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
 			return
 		}
 		verifyValidityAndBalance(t, membersPlan2, plan2)
