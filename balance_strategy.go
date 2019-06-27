@@ -148,8 +148,8 @@ func (s *stickyBalanceStrategy) Name() string { return "sticky" }
 // Plan implements BalanceStrategy.
 func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetadata, topics map[string][]int32) (BalanceStrategyPlan, error) {
 	s.movements = partitionMovements{
-		movements:                 make(map[topicPartitionAssignment]consumerPair),
-		partitionMovementsByTopic: make(map[string]map[consumerPair][]topicPartitionAssignment),
+		Movements:                 make(map[topicPartitionAssignment]consumerPair),
+		PartitionMovementsByTopic: make(map[string]map[consumerPair][]topicPartitionAssignment),
 	}
 	currentAssignment, prevAssignment, err := prepopulateCurrentAssignments(members)
 	if err != nil {
@@ -805,37 +805,37 @@ type consumerGenerationPair struct {
 
 // consumerPair represents a pair of Kafka consumer ids involved in a partition reassignment.
 type consumerPair struct {
-	srcMemberID string
-	dstMemberID string
+	SrcMemberID string
+	DstMemberID string
 }
 
 // partitionMovements maintains some data structures to simplify lookup of partition movements among consumers.
 type partitionMovements struct {
-	partitionMovementsByTopic map[string]map[consumerPair][]topicPartitionAssignment
-	movements                 map[topicPartitionAssignment]consumerPair
+	PartitionMovementsByTopic map[string]map[consumerPair][]topicPartitionAssignment
+	Movements                 map[topicPartitionAssignment]consumerPair
 }
 
 func (p *partitionMovements) removeMovementRecordOfPartition(partition topicPartitionAssignment) consumerPair {
-	pair := p.movements[partition]
-	delete(p.movements, partition)
+	pair := p.Movements[partition]
+	delete(p.Movements, partition)
 
-	partitionMovementsForThisTopic := p.partitionMovementsByTopic[partition.Topic]
+	partitionMovementsForThisTopic := p.PartitionMovementsByTopic[partition.Topic]
 	partitionMovementsForThisTopic[pair] = removeTopicPartitionFromMemberAssignments(partitionMovementsForThisTopic[pair], partition)
 	if len(partitionMovementsForThisTopic[pair]) == 0 {
 		delete(partitionMovementsForThisTopic, pair)
 	}
-	if len(p.partitionMovementsByTopic[partition.Topic]) == 0 {
-		delete(p.partitionMovementsByTopic, partition.Topic)
+	if len(p.PartitionMovementsByTopic[partition.Topic]) == 0 {
+		delete(p.PartitionMovementsByTopic, partition.Topic)
 	}
 	return pair
 }
 
 func (p *partitionMovements) addPartitionMovementRecord(partition topicPartitionAssignment, pair consumerPair) {
-	p.movements[partition] = pair
-	if _, exists := p.partitionMovementsByTopic[partition.Topic]; !exists {
-		p.partitionMovementsByTopic[partition.Topic] = make(map[consumerPair][]topicPartitionAssignment)
+	p.Movements[partition] = pair
+	if _, exists := p.PartitionMovementsByTopic[partition.Topic]; !exists {
+		p.PartitionMovementsByTopic[partition.Topic] = make(map[consumerPair][]topicPartitionAssignment)
 	}
-	partitionMovementsForThisTopic := p.partitionMovementsByTopic[partition.Topic]
+	partitionMovementsForThisTopic := p.PartitionMovementsByTopic[partition.Topic]
 	if _, exists := partitionMovementsForThisTopic[pair]; !exists {
 		partitionMovementsForThisTopic[pair] = make([]topicPartitionAssignment, 0)
 	}
@@ -844,20 +844,20 @@ func (p *partitionMovements) addPartitionMovementRecord(partition topicPartition
 
 func (p *partitionMovements) movePartition(partition topicPartitionAssignment, oldConsumer, newConsumer string) {
 	pair := consumerPair{
-		srcMemberID: oldConsumer,
-		dstMemberID: newConsumer,
+		SrcMemberID: oldConsumer,
+		DstMemberID: newConsumer,
 	}
-	if _, exists := p.movements[partition]; exists {
+	if _, exists := p.Movements[partition]; exists {
 		// this partition has previously moved
 		existingPair := p.removeMovementRecordOfPartition(partition)
-		if existingPair.dstMemberID != oldConsumer {
-			Logger.Printf("Existing pair dstMemberID %s was not equal to the oldConsumer ID %s", existingPair.dstMemberID, oldConsumer)
+		if existingPair.DstMemberID != oldConsumer {
+			Logger.Printf("Existing pair DstMemberID %s was not equal to the oldConsumer ID %s", existingPair.DstMemberID, oldConsumer)
 		}
-		if existingPair.srcMemberID != newConsumer {
+		if existingPair.SrcMemberID != newConsumer {
 			// the partition is not moving back to its previous consume
 			p.addPartitionMovementRecord(partition, consumerPair{
-				srcMemberID: existingPair.srcMemberID,
-				dstMemberID: newConsumer,
+				SrcMemberID: existingPair.SrcMemberID,
+				DstMemberID: newConsumer,
 			})
 		}
 	} else {
@@ -866,21 +866,21 @@ func (p *partitionMovements) movePartition(partition topicPartitionAssignment, o
 }
 
 func (p *partitionMovements) getTheActualPartitionToBeMoved(partition topicPartitionAssignment, oldConsumer, newConsumer string) topicPartitionAssignment {
-	if _, exists := p.partitionMovementsByTopic[partition.Topic]; !exists {
+	if _, exists := p.PartitionMovementsByTopic[partition.Topic]; !exists {
 		return partition
 	}
-	if _, exists := p.movements[partition]; exists {
+	if _, exists := p.Movements[partition]; exists {
 		// this partition has previously moved
-		if oldConsumer != p.movements[partition].dstMemberID {
-			Logger.Printf("Partition movement dstMemberID %s was not equal to the oldConsumer ID %s", p.movements[partition].dstMemberID, oldConsumer)
+		if oldConsumer != p.Movements[partition].DstMemberID {
+			Logger.Printf("Partition movement DstMemberID %s was not equal to the oldConsumer ID %s", p.Movements[partition].DstMemberID, oldConsumer)
 		}
-		oldConsumer = p.movements[partition].srcMemberID
+		oldConsumer = p.Movements[partition].SrcMemberID
 	}
 
-	partitionMovementsForThisTopic := p.partitionMovementsByTopic[partition.Topic]
+	partitionMovementsForThisTopic := p.PartitionMovementsByTopic[partition.Topic]
 	reversePair := consumerPair{
-		srcMemberID: newConsumer,
-		dstMemberID: oldConsumer,
+		SrcMemberID: newConsumer,
+		DstMemberID: oldConsumer,
 	}
 	if _, exists := partitionMovementsForThisTopic[reversePair]; !exists {
 		return partition
@@ -896,14 +896,14 @@ func (p *partitionMovements) isLinked(src, dst string, pairs []consumerPair, cur
 		return currentPath, false
 	}
 	for _, pair := range pairs {
-		if src == pair.srcMemberID && dst == pair.dstMemberID {
+		if src == pair.SrcMemberID && dst == pair.DstMemberID {
 			currentPath = append(currentPath, src, dst)
 			return currentPath, true
 		}
 	}
 
 	for _, pair := range pairs {
-		if pair.srcMemberID == src {
+		if pair.SrcMemberID == src {
 			// create a deep copy of the pairs, excluding the current pair
 			reducedSet := make([]consumerPair, len(pairs)-1)
 			i := 0
@@ -914,8 +914,8 @@ func (p *partitionMovements) isLinked(src, dst string, pairs []consumerPair, cur
 				}
 			}
 
-			currentPath = append(currentPath, pair.srcMemberID)
-			return p.isLinked(pair.dstMemberID, dst, reducedSet, currentPath)
+			currentPath = append(currentPath, pair.SrcMemberID)
+			return p.isLinked(pair.DstMemberID, dst, reducedSet, currentPath)
 		}
 	}
 	return currentPath, false
@@ -937,25 +937,6 @@ func (p *partitionMovements) in(cycle []string, cycles [][]string) bool {
 	return false
 }
 
-func indexOfSubList(source []string, target []string) int {
-	targetSize := len(target)
-	maxCandidate := len(source) - targetSize
-nextCand:
-	for candidate := 0; candidate <= maxCandidate; candidate++ {
-		j := candidate
-		for i := 0; i < targetSize; i++ {
-			if target[i] != source[j] {
-				// Element mismatch, try next cand
-				continue nextCand
-			}
-			j++
-		}
-		// All elements of candidate matched target
-		return candidate
-	}
-	return -1
-}
-
 func (p *partitionMovements) hasCycles(pairs []consumerPair) bool {
 	cycles := make([][]string, 0)
 	for _, pair := range pairs {
@@ -968,7 +949,7 @@ func (p *partitionMovements) hasCycles(pairs []consumerPair) bool {
 				i++
 			}
 		}
-		if path, linked := p.isLinked(pair.dstMemberID, pair.srcMemberID, reducedPairs, []string{pair.srcMemberID}); linked {
+		if path, linked := p.isLinked(pair.DstMemberID, pair.SrcMemberID, reducedPairs, []string{pair.SrcMemberID}); linked {
 			if !p.in(path, cycles) {
 				cycles = append(cycles, path)
 				Logger.Printf("A cycle of length %d was found: %v", len(path)-1, path)
@@ -988,7 +969,7 @@ func (p *partitionMovements) hasCycles(pairs []consumerPair) bool {
 }
 
 func (p *partitionMovements) isSticky() bool {
-	for topic, movements := range p.partitionMovementsByTopic {
+	for topic, movements := range p.PartitionMovementsByTopic {
 		movementPairs := make([]consumerPair, len(movements))
 		i := 0
 		for pair := range movements {
@@ -1002,4 +983,23 @@ func (p *partitionMovements) isSticky() bool {
 		}
 	}
 	return true
+}
+
+func indexOfSubList(source []string, target []string) int {
+	targetSize := len(target)
+	maxCandidate := len(source) - targetSize
+nextCand:
+	for candidate := 0; candidate <= maxCandidate; candidate++ {
+		j := candidate
+		for i := 0; i < targetSize; i++ {
+			if target[i] != source[j] {
+				// Element mismatch, try next cand
+				continue nextCand
+			}
+			j++
+		}
+		// All elements of candidate matched target
+		return candidate
+	}
+	return -1
 }
