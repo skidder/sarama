@@ -2,7 +2,6 @@ package sarama
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"sort"
 
@@ -1004,7 +1003,7 @@ func (p *partitionMovements) hasCycles(pairs []consumerPair) bool {
 		if path, linked := p.isLinked(pair.dstMemberID, pair.srcMemberID, reducedPairs, []string{pair.srcMemberID}); linked {
 			if !p.in(path, cycles) {
 				cycles = append(cycles, path)
-				log.Printf("A cycle of length %d was found: %v", len(path)-1, path)
+				Logger.Printf("A cycle of length %d was found: %v", len(path)-1, path)
 			}
 		}
 	}

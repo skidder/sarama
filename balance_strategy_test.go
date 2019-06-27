@@ -3,9 +3,11 @@ package sarama
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 )
 
 func TestBalanceStrategyRange(t *testing.T) {
@@ -1617,6 +1619,122 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testin
 
 	// add a new consumer
 	members["consumer10"] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
+
+	plan2, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan2)
+}
+
+func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := make(map[string]ConsumerGroupMemberMetadata, 20)
+	for i := 0; i < 9; i++ {
+		topics := make([]string, 15)
+		for j := 0; j < 15; j++ {
+			topics[j] = fmt.Sprintf("topic%d", j)
+		}
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: topics}
+	}
+	topics := make(map[string][]int32, 15)
+	for i := 0; i < 15; i++ {
+		partitions := make([]int32, i)
+		for j := 0; j < i; j++ {
+			partitions[j] = int32(j)
+		}
+		topics[fmt.Sprintf("topic%d", i)] = partitions
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+
+	for i := 0; i < 9; i++ {
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
+			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
+			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+		}
+	}
+	delete(members, "consumer5")
+
+	plan2, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() plan 2 AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan2)
+}
+
+func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// PLAN 1
+	members := make(map[string]ConsumerGroupMemberMetadata, 20)
+	for i := 0; i < 200; i++ {
+		topics := make([]string, 200)
+		for j := 0; j < 200; j++ {
+			topics[j] = fmt.Sprintf("topic%d", j)
+		}
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: topics}
+	}
+	topics := make(map[string][]int32, 40)
+	for i := 0; i < 40; i++ {
+		partitionCount := r.Intn(20)
+		partitions := make([]int32, partitionCount)
+		for j := 0; j < partitionCount; j++ {
+			partitions[j] = int32(j)
+		}
+		topics[fmt.Sprintf("topic%d", i)] = partitions
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+
+	for i := 0; i < 200; i++ {
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
+			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
+			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+		}
+	}
+	for i := 0; i < 50; i++ {
+		delete(members, fmt.Sprintf("consumer%d", i))
+	}
 
 	plan2, err := s.Plan(members, topics)
 	if err != nil {
