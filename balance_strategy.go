@@ -1,9 +1,12 @@
 package sarama
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"sort"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 const (
@@ -140,6 +143,7 @@ func balanceStrategyHashValue(vv ...string) uint32 {
 }
 
 type stickyBalanceStrategy struct {
+	movements partitionMovements
 }
 
 // Name implements BalanceStrategy.
@@ -147,7 +151,10 @@ func (s *stickyBalanceStrategy) Name() string { return "sticky" }
 
 // Plan implements BalanceStrategy.
 func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetadata, topics map[string][]int32) (BalanceStrategyPlan, error) {
-	movements := partitionMovements{}
+	s.movements = partitionMovements{
+		movements:                 make(map[topicPartitionAssignment]consumerPair),
+		partitionMovementsByTopic: make(map[string]map[consumerPair][]topicPartitionAssignment),
+	}
 	currentAssignment, prevAssignment, err := prepopulateCurrentAssignments(members)
 	if err != nil {
 		return nil, err
@@ -197,7 +204,11 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 	}
 
 	sortedPartitions := sortPartitions(currentAssignment, prevAssignment, isFreshAssignment, partition2AllPotentialConsumers, consumer2AllPotentialPartitions)
+	// fmt.Println("Sorted partitions")
+	// pretty.Print(sortedPartitions)
 	unassignedPartitions := deepCopyPartitions(sortedPartitions)
+	// fmt.Println("Unassigned partitions")
+	// pretty.Print(unassignedPartitions)
 	for memberID, partitions := range currentAssignment {
 		// if a consumer that existed before (and had some partition assignments) is now removed, remove it from currentAssignment
 		if _, exists := members[memberID]; !exists {
@@ -233,7 +244,7 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 
 	// a descending sorted set of consumers based on how many topic partitions are already assigned to them
 	sortedCurrentSubscriptions := sortMemberIDsByPartitionAssignments(currentAssignment)
-	balance(movements, currentAssignment, prevAssignment, sortedPartitions, unassignedPartitions, sortedCurrentSubscriptions, consumer2AllPotentialPartitions, partition2AllPotentialConsumers, currentPartitionConsumer)
+	balance(s.movements, currentAssignment, prevAssignment, sortedPartitions, unassignedPartitions, sortedCurrentSubscriptions, consumer2AllPotentialPartitions, partition2AllPotentialConsumers, currentPartitionConsumer)
 
 	// Assemble plan
 	plan := make(BalanceStrategyPlan)
@@ -271,9 +282,9 @@ func balance(movements partitionMovements, currentAssignment map[string][]topicP
 	fixedAssignments := make(map[string][]topicPartitionAssignment)
 	for memberID := range consumer2AllPotentialPartitions {
 		if !canConsumerParticipateInReassignment(memberID, currentAssignment, consumer2AllPotentialPartitions, partition2AllPotentialConsumers) {
-			sortedCurrentSubscriptions = removeValueFromSlice(sortedCurrentSubscriptions, memberID)
 			fixedAssignments[memberID] = currentAssignment[memberID]
 			delete(currentAssignment, memberID)
+			sortedCurrentSubscriptions = sortMemberIDsByPartitionAssignments(currentAssignment)
 		}
 	}
 
@@ -299,7 +310,9 @@ func balance(movements partitionMovements, currentAssignment map[string][]topicP
 	// add the fixed assignments (those that could not change) back
 	for consumer, assignments := range fixedAssignments {
 		currentAssignment[consumer] = assignments
-		sortedCurrentSubscriptions = append(sortedCurrentSubscriptions, consumer)
+
+		// XXXX This might not be necessary, commenting out for now
+		// sortedCurrentSubscriptions = append(sortedCurrentSubscriptions, consumer)
 	}
 }
 
@@ -325,8 +338,10 @@ func getBalanceScore(assignment map[string][]topicPartitionAssignment) int {
 func isBalanced(currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, allSubscriptions map[string][]topicPartitionAssignment) bool {
 	min := len(currentAssignment[sortedCurrentSubscriptions[len(sortedCurrentSubscriptions)-1]])
 	max := len(currentAssignment[sortedCurrentSubscriptions[0]])
+	fmt.Printf("Checking balance: min=%d, max=%d\n", min, max)
 	if min >= max-1 {
 		// if minimum and maximum numbers of partitions assigned to consumers differ by at most one return true
+		fmt.Println("Difference between assignments is one or less, reporting that assignment is balanced")
 		return true
 	}
 
@@ -354,12 +369,16 @@ func isBalanced(currentAssignment map[string][]topicPartitionAssignment, sortedC
 
 		// otherwise make sure it cannot get any more
 		potentialTopicPartitions := allSubscriptions[memberID]
+		fmt.Printf("Checking partitions for member ID = %s consumer partition count = %d\n", memberID, consumerPartitionCount)
+		pretty.Print(potentialTopicPartitions)
 		for _, partition := range potentialTopicPartitions {
+			fmt.Printf("Evaluating partition: %v\n", partition)
 			if !memberAssignmentsIncludeTopicPartition(currentAssignment[memberID], partition) {
+				fmt.Printf("Considering partition: %v\n", partition)
 				otherConsumer := allPartitions[partition]
 				otherConsumerPartitionCount := len(currentAssignment[otherConsumer])
 				if consumerPartitionCount < otherConsumerPartitionCount {
-					Logger.Printf("Topic %s Partition %d can be moved from consumer %s to consumer %s for a more balanced assignment", partition.Topic, partition.Partition, otherConsumer, memberID)
+					fmt.Printf("Topic %s Partition %d can be moved from consumer %s to consumer %s for a more balanced assignment", partition.Topic, partition.Partition, otherConsumer, memberID)
 					return false
 				}
 			}
@@ -378,22 +397,26 @@ func performReassignments(movements partitionMovements, reassignablePartitions [
 		// reassign all reassignable partitions (starting from the partition with least potential consumers and if needed)
 		// until the full list is processed or a balance is achieved
 		for _, partition := range reassignablePartitions {
-			if !isBalanced(currentAssignment, sortedCurrentSubscriptions, consumer2AllPotentialPartitions) {
+			fmt.Printf("Iterating over partition: %v\n", partition)
+			fmt.Printf("Sorted current subscriptions: %v\n", sortedCurrentSubscriptions)
+			if isBalanced(currentAssignment, sortedCurrentSubscriptions, consumer2AllPotentialPartitions) {
 				break
 			}
 
 			// the partition must have at least two consumers
 			if len(partition2AllPotentialConsumers[partition]) <= 1 {
-				Logger.Printf("Expected more than one potential consumer for partition %s topic %d", partition.Topic, partition.Partition)
+				fmt.Printf("Expected more than one potential consumer for partition %s topic %d", partition.Topic, partition.Partition)
 			}
 
 			// the partition must have a consumer
 			consumer := currentPartitionConsumer[partition]
 			if consumer == "" {
-				Logger.Printf("Expected topic %s partition %d to be assigned to a consumer", partition.Topic, partition.Partition)
+				fmt.Printf("Expected topic %s partition %d to be assigned to a consumer", partition.Topic, partition.Partition)
 			}
 
+			fmt.Printf("Checking for previous assignment for partition %v\n", partition)
 			if _, exists := prevAssignment[partition]; exists {
+				fmt.Printf("Previous assignment exists for partition %v\n", partition)
 				if len(currentAssignment[consumer]) > (len(currentAssignment[prevAssignment[partition].MemberID]) + 1) {
 					sortedCurrentSubscriptions = reassignPartition(movements, partition, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer, prevAssignment[partition].MemberID)
 					reassignmentPerformed = true
@@ -403,11 +426,17 @@ func performReassignments(movements partitionMovements, reassignablePartitions [
 			}
 
 			// check if a better-suited consumer exists for the partition; if so, reassign it
+			fmt.Printf("Checking for better-suited assignment for partition %v\n", partition)
 			for _, otherConsumer := range partition2AllPotentialConsumers[partition] {
+				fmt.Printf("Checking for better-suited assignment for partition %v with other consumer: %s\n", partition, otherConsumer)
 				if len(currentAssignment[consumer]) > (len(currentAssignment[otherConsumer]) + 1) {
+					fmt.Printf("Found better-suited assignment for partition %v with other consumer: %s\n", partition, otherConsumer)
 					sortedCurrentSubscriptions = reassignPartitionToNewConsumer(movements, partition, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer, consumer2AllPotentialPartitions)
 					reassignmentPerformed = true
 					modified = true
+
+					pretty.Print(sortedCurrentSubscriptions)
+					pretty.Print(currentAssignment)
 					break
 				}
 
@@ -420,9 +449,11 @@ func performReassignments(movements partitionMovements, reassignablePartitions [
 }
 
 func reassignPartitionToNewConsumer(movements partitionMovements, partition topicPartitionAssignment, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string, consumer2AllPotentialPartitions map[string][]topicPartitionAssignment) []string {
-	// find the new cosnumer
-	for _, anotherConsumer := range sortedCurrentSubscriptions {
+	// find the new consumer, evaluating from right to left
+	for i := len(sortedCurrentSubscriptions) - 1; i >= 0; i-- {
+		anotherConsumer := sortedCurrentSubscriptions[i]
 		if memberAssignmentsIncludeTopicPartition(consumer2AllPotentialPartitions[anotherConsumer], partition) {
+			fmt.Printf("Reassigning partition %v to new consumer: %s\n", partition, anotherConsumer)
 			return reassignPartition(movements, partition, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer, anotherConsumer)
 		}
 	}
@@ -433,22 +464,19 @@ func reassignPartition(movements partitionMovements, partition topicPartitionAss
 	consumer := currentPartitionConsumer[partition]
 	// find the correct partition movement considering the stickiness requirement
 	partitionToBeMoved := movements.getTheActualPartitionToBeMoved(partition, consumer, newConsumer)
-	sortedCurrentSubscriptions = processPartitionMovement(movements, partitionToBeMoved, newConsumer, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer)
-	return sortedCurrentSubscriptions
+	return processPartitionMovement(movements, partitionToBeMoved, newConsumer, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer)
 }
 
 func processPartitionMovement(movements partitionMovements, partition topicPartitionAssignment, newConsumer string, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string) []string {
 	oldConsumer := currentPartitionConsumer[partition]
-	sortedCurrentSubscriptions = removeValueFromSlice(sortedCurrentSubscriptions, oldConsumer)
-	sortedCurrentSubscriptions = removeValueFromSlice(sortedCurrentSubscriptions, newConsumer)
-
 	movements.movePartition(partition, oldConsumer, newConsumer)
 
 	currentAssignment[oldConsumer] = removeTopicPartitionFromMemberAssignments(currentAssignment[oldConsumer], partition)
 	currentAssignment[newConsumer] = append(currentAssignment[newConsumer], partition)
 	currentPartitionConsumer[partition] = newConsumer
-	sortedCurrentSubscriptions = append(sortedCurrentSubscriptions, newConsumer, oldConsumer)
-	return sortedCurrentSubscriptions
+
+	// TODO: FIX XXXX must re-sort the subscriptions
+	return sortMemberIDsByPartitionAssignments(currentAssignment)
 }
 
 func canConsumerParticipateInReassignment(memberID string, currentAssignment map[string][]topicPartitionAssignment, consumer2AllPotentialPartitions map[string][]topicPartitionAssignment, partition2AllPotentialConsumers map[topicPartitionAssignment][]string) bool {
@@ -483,13 +511,16 @@ func assignPartition(partition topicPartitionAssignment, sortedCurrentSubscripti
 	for i, s := range sortedCurrentSubscriptions {
 		updatedSubscriptions[i] = s
 	}
-	for i, memberID := range sortedCurrentSubscriptions {
+	i := 0
+	for _, memberID := range sortedCurrentSubscriptions {
 		if memberAssignmentsIncludeTopicPartition(consumer2AllPotentialPartitions[memberID], partition) {
 			updatedSubscriptions = removeIndexFromSlice(updatedSubscriptions, i)
 			currentAssignment[memberID] = append(currentAssignment[memberID], partition)
 			currentPartitionConsumer[partition] = memberID
 			updatedSubscriptions = append(updatedSubscriptions, memberID)
+			break
 		}
+		i++
 	}
 	return updatedSubscriptions
 }
@@ -582,9 +613,9 @@ func sortPartitions(currentAssignment map[string][]topicPartitionAssignment, par
 			if len(sortedMemberIDs) == 0 {
 				break
 			}
-			for i, memberID := range sortedMemberIDs {
+			for _, memberID := range sortedMemberIDs {
 				// remove member from list
-				sortedMemberIDs = removeIndexFromSlice(sortedMemberIDs, i)
+				sortedMemberIDs = removeIndexFromSlice(sortedMemberIDs, 0)
 
 				// partitions that were assigned to a different consumer last time
 				prevPartitions := make([]topicPartitionAssignment, 0)
@@ -657,8 +688,8 @@ func sortPartitionsByPotentialConsumerAssignments(partition2AllPotentialConsumer
 
 func deepCopyPartitions(src []topicPartitionAssignment) []topicPartitionAssignment {
 	dst := make([]topicPartitionAssignment, len(src))
-	for _, partition := range src {
-		dst = append(dst, partition)
+	for i, partition := range src {
+		dst[i] = partition
 	}
 	return dst
 }

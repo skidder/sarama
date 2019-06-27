@@ -1,6 +1,7 @@
 package sarama
 
 import (
+	"math"
 	"reflect"
 	"testing"
 )
@@ -591,7 +592,6 @@ func Test_sortPartitions(t *testing.T) {
 					topicPartitionAssignment{Topic: "t1", Partition: 0}: consumerGenerationPair{Generation: 1, MemberID: "c2"},
 				},
 			},
-			want: []topicPartitionAssignment{topicPartitionAssignment{Topic: "t1", Partition: 0}, topicPartitionAssignment{Topic: "t1", Partition: 1}, topicPartitionAssignment{Topic: "t1", Partition: 2}},
 		},
 		{
 			name: "Partitions assigned to a different consumer last time",
@@ -1110,4 +1110,333 @@ func Test_assignPartition(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_balanceStrategy_Plan(t *testing.T) {
+	type fields struct {
+		name   string
+		coreFn func(plan BalanceStrategyPlan, memberIDs []string, topic string, partitions []int32)
+	}
+	type args struct {
+		members map[string]ConsumerGroupMemberMetadata
+		topics  map[string][]int32
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    BalanceStrategyPlan
+		wantErr bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &balanceStrategy{
+				name:   tt.fields.name,
+				coreFn: tt.fields.coreFn,
+			}
+			got, err := s.Plan(tt.args.members, tt.args.topics)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("balanceStrategy.Plan() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("balanceStrategy.Plan() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_stickyBalanceStrategy_Plan(t *testing.T) {
+	type args struct {
+		members map[string]ConsumerGroupMemberMetadata
+		topics  map[string][]int32
+	}
+	tests := []struct {
+		name    string
+		s       *stickyBalanceStrategy
+		args    args
+		want    BalanceStrategyPlan
+		wantErr bool
+	}{
+		{
+			name: "One consumer with no topics",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer": ConsumerGroupMemberMetadata{},
+				},
+				topics: make(map[string][]int32),
+			},
+			want:    BalanceStrategyPlan{},
+			wantErr: false,
+		},
+		{
+			name: "One consumer with non-existent topic",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic": make([]int32, 0),
+				},
+			},
+			want:    BalanceStrategyPlan{},
+			wantErr: false,
+		},
+		{
+			name: "One consumer with one topic",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic": []int32{0, 1, 2},
+				},
+			},
+			want: BalanceStrategyPlan{
+				"consumer": map[string][]int32{
+					"topic": []int32{0, 1, 2},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Only assigns partitions from subscribed topics",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic": []int32{0, 1, 2},
+					"other": []int32{0, 1, 2},
+				},
+			},
+			want: BalanceStrategyPlan{
+				"consumer": map[string][]int32{
+					"topic": []int32{0, 1, 2},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "One consumer with multiple topics",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic1", "topic2"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic1": []int32{0},
+					"topic2": []int32{0, 1},
+				},
+			},
+			want: BalanceStrategyPlan{
+				"consumer": map[string][]int32{
+					"topic1": []int32{0},
+					"topic2": []int32{0, 1},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Two consumers with one topic and one partition",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer1": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic"},
+					},
+					"consumer2": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic": []int32{0},
+				},
+			},
+			want: BalanceStrategyPlan{
+				"consumer1": map[string][]int32{
+					"topic": []int32{0},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Two consumers with one topic and two partitions",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer1": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic"},
+					},
+					"consumer2": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic": []int32{0, 1},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Multiple consumers with mixed topic subscriptions",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer1": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic1"},
+					},
+					"consumer2": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic1", "topic2"},
+					},
+					"consumer3": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic1"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic1": []int32{0, 1, 2},
+					"topic2": []int32{0, 1},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Two consumers with two topics and six partitions",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer1": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic1", "topic2"},
+					},
+					"consumer2": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic1", "topic2"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic1": []int32{0, 1, 2},
+					"topic2": []int32{0, 1, 2},
+				},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &stickyBalanceStrategy{}
+			got, err := s.Plan(tt.args.members, tt.args.topics)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("stickyBalanceStrategy.Plan() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !isFullyBalanced(got) {
+				t.Error("stickyBalanceStrategy.Plan() unbalanced")
+				return
+			}
+		})
+	}
+}
+
+func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic"},
+		},
+	}
+	topics := map[string][]int32{
+		"topic": []int32{0, 1, 2},
+	}
+	plan1, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan1) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic unbalanced")
+		return
+	}
+
+	// PLAN 2
+	userDataBytes, err := encode(&StickyAssignorUserDataV1{
+		Topics:     plan1["consumer1"],
+		Generation: DefaultGeneration,
+	}, nil)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic"},
+		UserData: userDataBytes,
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics: []string{"topic"},
+	}
+	plan2, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 is unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 2 not sticky")
+		return
+	}
+
+	// PLAN 3
+	userDataBytes, err = encode(&StickyAssignorUserDataV1{
+		Topics:     plan2["consumer2"],
+		Generation: DefaultGeneration,
+	}, nil)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic error = %v", err)
+		return
+	}
+	delete(members, "consumer1")
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic"},
+		UserData: userDataBytes,
+	}
+	plan3, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan3) {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 is unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() AddRemoveConsumerOneTopic plan 3 not sticky")
+		return
+	}
+}
+
+// verify that the plan is fully balanced
+func isFullyBalanced(plan BalanceStrategyPlan) bool {
+	min := math.MaxInt32
+	max := math.MinInt32
+	for _, topics := range plan {
+		assignedPartitionsCount := 0
+		for _, partitions := range topics {
+			assignedPartitionsCount += len(partitions)
+		}
+		if assignedPartitionsCount < min {
+			min = assignedPartitionsCount
+		}
+		if assignedPartitionsCount > max {
+			max = assignedPartitionsCount
+		}
+	}
+	return (max - min) <= 1
 }
