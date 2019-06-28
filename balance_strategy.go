@@ -729,11 +729,11 @@ func areSubscriptionsIdentical(partition2AllPotentialConsumers map[topicPartitio
 // higher generations overwrite lower generations in case of a conflict
 // note that a conflict could exist only if user data is for different generations
 func prepopulateCurrentAssignments(members map[string]ConsumerGroupMemberMetadata) (map[string][]topicPartitionAssignment, map[topicPartitionAssignment]consumerGenerationPair, error) {
-	currentAssignment := map[string][]topicPartitionAssignment{}
-	prevAssignment := map[topicPartitionAssignment]consumerGenerationPair{}
+	currentAssignment := make(map[string][]topicPartitionAssignment)
+	prevAssignment := make(map[topicPartitionAssignment]consumerGenerationPair)
 
 	// for each partition we create a sorted map of its consumers by generation
-	sortedPartitionConsumersByGeneration := make(map[topicPartitionAssignment]map[int]string, 0)
+	sortedPartitionConsumersByGeneration := make(map[topicPartitionAssignment]map[int]string)
 	for memberID, meta := range members {
 		consumerUserData, err := deserializeTopicPartitionAssignment(meta.UserData)
 		if err != nil {
