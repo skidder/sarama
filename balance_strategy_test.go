@@ -1906,7 +1906,7 @@ func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
 	delete(members, "consumer1")
 	for i := 2; i <= 4; i++ {
 		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
-			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
+			Topics:   []string{"topic1"},
 			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
 		}
 	}
@@ -2035,10 +2035,10 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
-	if len(intersect(plan["consumer1"]["topic1"], plan2["consumer1"]["topic1"])) != 2 {
+	if len(intersection(plan["consumer1"]["topic1"], plan2["consumer1"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
-	if len(intersect(plan["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
+	if len(intersection(plan["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
 
@@ -2111,7 +2111,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 		return
 	}
 	verifyValidityAndBalance(t, members, plan2)
-	if len(intersect(plan["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
+	if len(intersection(plan["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
 
@@ -2142,6 +2142,100 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 		return
 	}
 	verifyValidityAndBalance(t, members, plan3)
+}
+func Test_stickyBalanceStrategy_Plan_AssignmentWithConflictingPreviousGenerations(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	topics := map[string][]int32{"topic1": []int32{0, 1, 2, 3, 4, 5}}
+	members := make(map[string]ConsumerGroupMemberMetadata, 3)
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1"},
+		UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{0, 1, 4}}, 1),
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1"},
+		UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{0, 2, 3}}, 1),
+	}
+	members["consumer3"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1"},
+		UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{3, 4, 5}}, 2),
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+}
+
+func Test_stickyBalanceStrategy_Plan_SchemaBackwardCompatibility(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	topics := map[string][]int32{"topic1": []int32{0, 1, 2}}
+	members := make(map[string]ConsumerGroupMemberMetadata, 3)
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1"},
+		UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{0, 2}}, 1),
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1"},
+		UserData: encodeSubscriberPlanWithOldSchema(t, map[string][]int32{"topic1": []int32{1}}),
+	}
+	members["consumer3"] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+}
+
+func Test_stickyBalanceStrategy_Plan_ConflictingPreviousAssignments(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	topics := map[string][]int32{"topic1": []int32{0, 1}}
+	members := make(map[string]ConsumerGroupMemberMetadata, 2)
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1"},
+		UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{0, 1}}, 1),
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1"},
+		UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{0, 1}}, 1),
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
 }
 
 func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMemberMetadata, plan BalanceStrategyPlan) {
@@ -2194,9 +2288,9 @@ func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMe
 					otherConsumerAssignments = append(otherConsumerAssignments, topicPartitionAssignment{Topic: topic, Partition: partition})
 				}
 			}
-			intersection := intersect(consumerAssignments, otherConsumerAssignments)
-			if len(intersection) > 0 {
-				t.Errorf("Consumers %s and %s have common partitions assigned to them: %v", memberID, otherConsumer, intersection)
+			assignmentsIntersection := intersection(consumerAssignments, otherConsumerAssignments)
+			if len(assignmentsIntersection) > 0 {
+				t.Errorf("Consumers %s and %s have common partitions assigned to them: %v", memberID, otherConsumer, assignmentsIntersection)
 				t.FailNow()
 			}
 
@@ -2227,7 +2321,7 @@ func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMe
 
 // Produces the intersection of two slices
 // From https://github.com/juliangruber/go-intersect
-func intersect(a interface{}, b interface{}) []interface{} {
+func intersection(a interface{}, b interface{}) []interface{} {
 	set := make([]interface{}, 0)
 	hash := make(map[interface{}]bool)
 	av := reflect.ValueOf(a)
@@ -2256,6 +2350,17 @@ func encodeSubscriberPlanWithGeneration(t *testing.T, assignments map[string][]i
 	userDataBytes, err := encode(&StickyAssignorUserDataV1{
 		Topics:     assignments,
 		Generation: generation,
+	}, nil)
+	if err != nil {
+		t.Errorf("encodeSubscriberPlan error = %v", err)
+		t.FailNow()
+	}
+	return userDataBytes
+}
+
+func encodeSubscriberPlanWithOldSchema(t *testing.T, assignments map[string][]int32) []byte {
+	userDataBytes, err := encode(&StickyAssignorUserDataV0{
+		Topics: assignments,
 	}, nil)
 	if err != nil {
 		t.Errorf("encodeSubscriberPlan error = %v", err)
