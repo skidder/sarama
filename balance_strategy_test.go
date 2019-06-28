@@ -330,27 +330,11 @@ func Test_prepopulateCurrentAssignments(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// userData := &StickyAssignorUserDataV1{}
-			// decode(tt.args.members["c01"].UserData, userData)
-			// userData.Generation = 5
-			// packet, err := encode(userData, nil)
-			// fmt.Printf("Gen 5: %s", base64.StdEncoding.EncodeToString(packet))
-
-			// userData.Generation = 6
-			// packet, err = encode(userData, nil)
-			// fmt.Printf("Gen 6: %s", base64.StdEncoding.EncodeToString(packet))
-
-			// t.FailNow()
-
 			_, gotPrevAssignments, err := prepopulateCurrentAssignments(tt.args.members)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("prepopulateCurrentAssignments() error = %v, wantErr %v", err, tt.wantErr)
 			}
-
-			// if !reflect.DeepEqual(gotCurrentAssignments, tt.wantCurrentAssignments) {
-			// 	t.Errorf("deserializeTopicPartitionAssignment() currentAssignments = %v, want %v", gotCurrentAssignments, tt.wantCurrentAssignments)
-			// }
 
 			if !reflect.DeepEqual(gotPrevAssignments, tt.wantPrevAssignments) {
 				t.Errorf("deserializeTopicPartitionAssignment() prevAssignments = %v, want %v", gotPrevAssignments, tt.wantPrevAssignments)
