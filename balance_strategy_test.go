@@ -1862,6 +1862,150 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentWithRandomSubscriptionsAndChang
 	}
 }
 
+func Test_stickyBalanceStrategy_Plan_MoveExistingAssignments(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	topics := make(map[string][]int32, 6)
+	for i := 1; i <= 6; i++ {
+		topics[fmt.Sprintf("topic%d", i)] = []int32{0}
+	}
+	members := make(map[string]ConsumerGroupMemberMetadata, 3)
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2"},
+		UserData: encodeSubscriberPlan(t, map[string][]int32{"topic1": []int32{0}}),
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2", "topic3", "topic4"},
+		UserData: encodeSubscriberPlan(t, map[string][]int32{"topic2": []int32{0}, "topic3": []int32{0}}),
+	}
+	members["consumer3"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic2", "topic3", "topic4", "topic5", "topic6"},
+		UserData: encodeSubscriberPlan(t, map[string][]int32{"topic4": []int32{0}, "topic5": []int32{0}, "topic6": []int32{0}}),
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+}
+
+func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	topics := map[string][]int32{"topic1": []int32{0, 1, 2}}
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
+		"consumer2": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
+		"consumer3": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
+		"consumer4": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+
+	// PLAN 2
+	// remove the potential group leader
+	delete(members, "consumer1")
+	for i := 2; i <= 4; i++ {
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
+			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
+			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+		}
+	}
+
+	plan2, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() plan 2 error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan2) {
+		t.Error("stickyBalanceStrategy.Plan() plan 2 unbalanced")
+		return
+	}
+	if !s.movements.isSticky() {
+		t.Error("stickyBalanceStrategy.Plan() plan 2 not sticky")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan2)
+}
+
+func Test_stickyBalanceStrategy_Plan_AssignmentUpdatedForDeletedTopic(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	topics := make(map[string][]int32, 2)
+	topics["topic1"] = []int32{0}
+	topics["topic3"] = make([]int32, 100)
+	for i := 0; i < 100; i++ {
+		topics["topic3"][i] = int32(i)
+	}
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{Topics: []string{"topic1", "topic2", "topic3"}},
+	}
+
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+	if (len(plan["consumer1"]["topic1"]) + len(plan["consumer1"]["topic3"])) != 101 {
+		t.Error("Incorrect number of partitions assigned")
+		return
+	}
+}
+
+func Test_stickyBalanceStrategy_Plan_NoExceptionRaisedWhenOnlySubscribedTopicDeleted(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	topics := map[string][]int32{"topic1": []int32{0, 1, 2}}
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
+	}
+	plan, err := s.Plan(members, topics)
+	if err != nil {
+		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
+		return
+	}
+	if !isFullyBalanced(plan) {
+		t.Error("stickyBalanceStrategy.Plan() unbalanced")
+		return
+	}
+	verifyValidityAndBalance(t, members, plan)
+
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics:   members["consumer1"].Topics,
+		UserData: encodeSubscriberPlan(t, plan["consumer1"]),
+	}
+
+	plan2, err := s.Plan(members, map[string][]int32{})
+	if len(plan2) != 1 {
+		t.Error("Incorrect number of consumers")
+		return
+	}
+	if len(plan2["consumer1"]) != 0 {
+		t.Error("Incorrect number of consumer topic assignments")
+		return
+	}
+}
+
 func verifyValidityAndBalance(t *testing.T, consumers map[string]ConsumerGroupMemberMetadata, plan BalanceStrategyPlan) {
 	size := len(consumers)
 	if size != len(plan) {
