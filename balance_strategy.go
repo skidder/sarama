@@ -1,7 +1,6 @@
 package sarama
 
 import (
-	"fmt"
 	"math"
 	"sort"
 )
@@ -421,7 +420,6 @@ func (s *stickyBalanceStrategy) performReassignments(reassignablePartitions []to
 			// check if a better-suited consumer exists for the partition; if so, reassign it
 			for _, otherConsumer := range partition2AllPotentialConsumers[partition] {
 				if len(currentAssignment[consumer]) > (len(currentAssignment[otherConsumer]) + 1) {
-					fmt.Printf("Reassigning topic %s partition %d to better-suited consumer: old=%s, new=%s\n", partition.Topic, partition.Partition, consumer, otherConsumer)
 					sortedCurrentSubscriptions = s.reassignPartitionToNewConsumer(partition, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer, consumer2AllPotentialPartitions)
 					reassignmentPerformed = true
 					modified = true
