@@ -306,9 +306,14 @@ func (c *consumerGroup) joinGroupRequest(coordinator *Broker, topics []string) (
 		req.RebalanceTimeout = int32(c.config.Consumer.Group.Rebalance.Timeout / time.Millisecond)
 	}
 
+	// use static user-data if configured, otherwise use consumer-group userdata from the last sync
+	userData := c.config.Consumer.Group.Member.UserData
+	if len(userData) == 0 {
+		userData = c.consumerGroupUserData
+	}
 	meta := &ConsumerGroupMemberMetadata{
 		Topics:   topics,
-		UserData: c.consumerGroupUserData,
+		UserData: userData,
 	}
 	strategy := c.config.Consumer.Group.Rebalance.Strategy
 	if err := req.AddGroupProtocolMetadata(strategy.Name(), meta); err != nil {
