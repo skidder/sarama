@@ -865,7 +865,7 @@ func (p *partitionMovements) movePartition(partition topicPartitionAssignment, o
 			Logger.Printf("Existing pair DstMemberID %s was not equal to the oldConsumer ID %s", existingPair.DstMemberID, oldConsumer)
 		}
 		if existingPair.SrcMemberID != newConsumer {
-			// the partition is not moving back to its previous consume
+			// the partition is not moving back to its previous consumer
 			p.addPartitionMovementRecord(partition, consumerPair{
 				SrcMemberID: existingPair.SrcMemberID,
 				DstMemberID: newConsumer,
