@@ -63,6 +63,8 @@ type consumerGroup struct {
 	lock      sync.Mutex
 	closed    chan none
 	closeOnce sync.Once
+
+	consumerGroupUserData []byte
 }
 
 // NewConsumerGroup creates a new consumer group the given broker addresses and configuration.
@@ -282,6 +284,7 @@ func (c *consumerGroup) newSession(ctx context.Context, topics []string, handler
 			return nil, err
 		}
 		claims = members.Topics
+		c.consumerGroupUserData = members.UserData
 
 		for _, partitions := range claims {
 			sort.Sort(int32Slice(partitions))
@@ -305,7 +308,7 @@ func (c *consumerGroup) joinGroupRequest(coordinator *Broker, topics []string) (
 
 	meta := &ConsumerGroupMemberMetadata{
 		Topics:   topics,
-		UserData: c.config.Consumer.Group.Member.UserData,
+		UserData: c.consumerGroupUserData,
 	}
 	strategy := c.config.Consumer.Group.Rebalance.Strategy
 	if err := req.AddGroupProtocolMetadata(strategy.Name(), meta); err != nil {
