@@ -706,131 +706,6 @@ func Test_filterAssignedPartitions(t *testing.T) {
 	}
 }
 
-func Test_removeIndexFromSlice(t *testing.T) {
-	type args struct {
-		s []string
-		i int
-	}
-	tests := []struct {
-		name string
-		args args
-		want []string
-	}{
-		{
-			name: "Empty slice",
-			args: args{
-				s: make([]string, 0),
-				i: 0,
-			},
-			want: make([]string, 0),
-		},
-		{
-			name: "Slice with single entry",
-			args: args{
-				s: []string{"foo"},
-				i: 0,
-			},
-			want: make([]string, 0),
-		},
-		{
-			name: "Slice with multiple entries",
-			args: args{
-				s: []string{"a", "b", "c"},
-				i: 0,
-			},
-			want: []string{"b", "c"},
-		},
-		{
-			name: "Slice with multiple entries and index is in the middle",
-			args: args{
-				s: []string{"a", "b", "c"},
-				i: 1,
-			},
-			want: []string{"a", "c"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := removeIndexFromSlice(tt.args.s, tt.args.i); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("removeIndexFromSlice() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_removeTopicPartitionFromMemberAssignments(t *testing.T) {
-	type args struct {
-		assignments []topicPartitionAssignment
-		topic       topicPartitionAssignment
-	}
-	tests := []struct {
-		name string
-		args args
-		want []topicPartitionAssignment
-	}{
-		{
-			name: "Empty",
-			args: args{
-				assignments: make([]topicPartitionAssignment, 0),
-				topic:       topicPartitionAssignment{Topic: "t1", Partition: 0},
-			},
-			want: make([]topicPartitionAssignment, 0),
-		},
-		{
-			name: "Remove first entry",
-			args: args{
-				assignments: []topicPartitionAssignment{
-					topicPartitionAssignment{Topic: "t1", Partition: 0},
-					topicPartitionAssignment{Topic: "t1", Partition: 1},
-					topicPartitionAssignment{Topic: "t1", Partition: 2},
-				},
-				topic: topicPartitionAssignment{Topic: "t1", Partition: 0},
-			},
-			want: []topicPartitionAssignment{
-				topicPartitionAssignment{Topic: "t1", Partition: 1},
-				topicPartitionAssignment{Topic: "t1", Partition: 2},
-			},
-		},
-		{
-			name: "Remove middle entry",
-			args: args{
-				assignments: []topicPartitionAssignment{
-					topicPartitionAssignment{Topic: "t1", Partition: 0},
-					topicPartitionAssignment{Topic: "t1", Partition: 1},
-					topicPartitionAssignment{Topic: "t1", Partition: 2},
-				},
-				topic: topicPartitionAssignment{Topic: "t1", Partition: 1},
-			},
-			want: []topicPartitionAssignment{
-				topicPartitionAssignment{Topic: "t1", Partition: 0},
-				topicPartitionAssignment{Topic: "t1", Partition: 2},
-			},
-		},
-		{
-			name: "Remove last entry",
-			args: args{
-				assignments: []topicPartitionAssignment{
-					topicPartitionAssignment{Topic: "t1", Partition: 0},
-					topicPartitionAssignment{Topic: "t1", Partition: 1},
-					topicPartitionAssignment{Topic: "t1", Partition: 2},
-				},
-				topic: topicPartitionAssignment{Topic: "t1", Partition: 2},
-			},
-			want: []topicPartitionAssignment{
-				topicPartitionAssignment{Topic: "t1", Partition: 0},
-				topicPartitionAssignment{Topic: "t1", Partition: 1},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := removeTopicPartitionFromMemberAssignments(tt.args.assignments, tt.args.topic); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("removeTopicPartitionFromMemberAssignments() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func Test_canConsumerParticipateInReassignment(t *testing.T) {
 	type args struct {
 		memberID                        string
@@ -932,7 +807,132 @@ func Test_canConsumerParticipateInReassignment(t *testing.T) {
 	}
 }
 
-func Test_removeValueFromSlice(t *testing.T) {
+func Test_removeTopicPartitionFromMemberAssignments(t *testing.T) {
+	type args struct {
+		assignments []topicPartitionAssignment
+		topic       topicPartitionAssignment
+	}
+	tests := []struct {
+		name string
+		args args
+		want []topicPartitionAssignment
+	}{
+		{
+			name: "Empty",
+			args: args{
+				assignments: make([]topicPartitionAssignment, 0),
+				topic:       topicPartitionAssignment{Topic: "t1", Partition: 0},
+			},
+			want: make([]topicPartitionAssignment, 0),
+		},
+		{
+			name: "Remove first entry",
+			args: args{
+				assignments: []topicPartitionAssignment{
+					topicPartitionAssignment{Topic: "t1", Partition: 0},
+					topicPartitionAssignment{Topic: "t1", Partition: 1},
+					topicPartitionAssignment{Topic: "t1", Partition: 2},
+				},
+				topic: topicPartitionAssignment{Topic: "t1", Partition: 0},
+			},
+			want: []topicPartitionAssignment{
+				topicPartitionAssignment{Topic: "t1", Partition: 1},
+				topicPartitionAssignment{Topic: "t1", Partition: 2},
+			},
+		},
+		{
+			name: "Remove middle entry",
+			args: args{
+				assignments: []topicPartitionAssignment{
+					topicPartitionAssignment{Topic: "t1", Partition: 0},
+					topicPartitionAssignment{Topic: "t1", Partition: 1},
+					topicPartitionAssignment{Topic: "t1", Partition: 2},
+				},
+				topic: topicPartitionAssignment{Topic: "t1", Partition: 1},
+			},
+			want: []topicPartitionAssignment{
+				topicPartitionAssignment{Topic: "t1", Partition: 0},
+				topicPartitionAssignment{Topic: "t1", Partition: 2},
+			},
+		},
+		{
+			name: "Remove last entry",
+			args: args{
+				assignments: []topicPartitionAssignment{
+					topicPartitionAssignment{Topic: "t1", Partition: 0},
+					topicPartitionAssignment{Topic: "t1", Partition: 1},
+					topicPartitionAssignment{Topic: "t1", Partition: 2},
+				},
+				topic: topicPartitionAssignment{Topic: "t1", Partition: 2},
+			},
+			want: []topicPartitionAssignment{
+				topicPartitionAssignment{Topic: "t1", Partition: 0},
+				topicPartitionAssignment{Topic: "t1", Partition: 1},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := removeTopicPartitionFromMemberAssignments(tt.args.assignments, tt.args.topic); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("removeTopicPartitionFromMemberAssignments() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_removeIndexFromStringSlice(t *testing.T) {
+	type args struct {
+		s []string
+		i int
+	}
+	tests := []struct {
+		name string
+		args args
+		want []string
+	}{
+		{
+			name: "Empty slice",
+			args: args{
+				s: make([]string, 0),
+				i: 0,
+			},
+			want: make([]string, 0),
+		},
+		{
+			name: "Slice with single entry",
+			args: args{
+				s: []string{"foo"},
+				i: 0,
+			},
+			want: make([]string, 0),
+		},
+		{
+			name: "Slice with multiple entries",
+			args: args{
+				s: []string{"a", "b", "c"},
+				i: 0,
+			},
+			want: []string{"b", "c"},
+		},
+		{
+			name: "Slice with multiple entries and index is in the middle",
+			args: args{
+				s: []string{"a", "b", "c"},
+				i: 1,
+			},
+			want: []string{"a", "c"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := removeIndexFromStringSlice(tt.args.s, tt.args.i); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("removeIndexFromSlice() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_removeValueFromStringSlice(t *testing.T) {
 	type args struct {
 		s []string
 		e string
@@ -969,7 +969,7 @@ func Test_removeValueFromSlice(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := removeValueFromSlice(tt.args.s, tt.args.e); !reflect.DeepEqual(got, tt.want) {
+			if got := removeValueFromStringSlice(tt.args.s, tt.args.e); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("removeValueFromSlice() = %v, want %v", got, tt.want)
 			}
 		})
