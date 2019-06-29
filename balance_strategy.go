@@ -199,7 +199,7 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 	}
 
 	// a mapping of partition to current consumer
-	currentPartitionConsumer := make(map[topicPartitionAssignment]string)
+	currentPartitionConsumer := make(map[topicPartitionAssignment]string, len(currentAssignment))
 	for memberID, subscriptions := range currentAssignment {
 		for _, partition := range subscriptions {
 			currentPartitionConsumer[partition] = memberID
@@ -492,7 +492,7 @@ func assignPartition(partition topicPartitionAssignment, sortedCurrentSubscripti
 	i := 0
 	for _, memberID := range sortedCurrentSubscriptions {
 		if memberAssignmentsIncludeTopicPartition(consumer2AllPotentialPartitions[memberID], partition) {
-			updatedSubscriptions = removeIndexFromSlice(updatedSubscriptions, i)
+			updatedSubscriptions = removeIndexFromStringSlice(updatedSubscriptions, i)
 			currentAssignment[memberID] = append(currentAssignment[memberID], partition)
 			currentPartitionConsumer[partition] = memberID
 			updatedSubscriptions = append(updatedSubscriptions, memberID)
@@ -533,7 +533,7 @@ func filterAssignedPartitions(currentAssignment map[string][]topicPartitionAssig
 	return assignments
 }
 
-func removeValueFromSlice(s []string, e string) []string {
+func removeValueFromStringSlice(s []string, e string) []string {
 	for i, v := range s {
 		if v == e {
 			s = append(s[:i], s[i+1:]...)
@@ -543,7 +543,7 @@ func removeValueFromSlice(s []string, e string) []string {
 	return s
 }
 
-func removeIndexFromSlice(s []string, i int) []string {
+func removeIndexFromStringSlice(s []string, i int) []string {
 	if len(s) == 0 {
 		return s
 	}
