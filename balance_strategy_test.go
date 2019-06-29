@@ -1278,6 +1278,27 @@ func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Three consumers (two old, one new) with one topic and twelve partitions",
+			args: args{
+				members: map[string]ConsumerGroupMemberMetadata{
+					"consumer1": ConsumerGroupMemberMetadata{
+						Topics:   []string{"topic1"},
+						UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{4, 11, 8, 5, 9, 2}}, 1),
+					},
+					"consumer2": ConsumerGroupMemberMetadata{
+						Topics:   []string{"topic1"},
+						UserData: encodeSubscriberPlanWithGeneration(t, map[string][]int32{"topic1": []int32{1, 3, 0, 7, 10, 6}}, 1),
+					},
+					"consumer3": ConsumerGroupMemberMetadata{
+						Topics: []string{"topic1"},
+					},
+				},
+				topics: map[string][]int32{
+					"topic1": []int32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

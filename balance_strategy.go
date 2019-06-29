@@ -1,6 +1,7 @@
 package sarama
 
 import (
+	"fmt"
 	"math"
 	"sort"
 )
@@ -420,6 +421,7 @@ func (s *stickyBalanceStrategy) performReassignments(reassignablePartitions []to
 			// check if a better-suited consumer exists for the partition; if so, reassign it
 			for _, otherConsumer := range partition2AllPotentialConsumers[partition] {
 				if len(currentAssignment[consumer]) > (len(currentAssignment[otherConsumer]) + 1) {
+					fmt.Printf("Reassigning topic %s partition %d to better-suited consumer: old=%s, new=%s\n", partition.Topic, partition.Partition, consumer, otherConsumer)
 					sortedCurrentSubscriptions = s.reassignPartitionToNewConsumer(partition, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer, consumer2AllPotentialPartitions)
 					reassignmentPerformed = true
 					modified = true
@@ -585,15 +587,17 @@ func sortPartitions(currentAssignment map[string][]topicPartitionAssignment, par
 
 		// sortedMemberIDs contains a descending-sorted list of consumers based on how many valid partitions are currently assigned to them
 		sortedMemberIDs := sortMemberIDsByPartitionAssignments(assignments)
+		for i := len(sortedMemberIDs)/2 - 1; i >= 0; i-- {
+			opp := len(sortedMemberIDs) - 1 - i
+			sortedMemberIDs[i], sortedMemberIDs[opp] = sortedMemberIDs[opp], sortedMemberIDs[i]
+		}
 		for {
 			// loop until no consumer-group members remain
 			if len(sortedMemberIDs) == 0 {
 				break
 			}
+			updatedMemberIDs := make([]string, 0)
 			for _, memberID := range sortedMemberIDs {
-				// remove member from list
-				sortedMemberIDs = removeIndexFromSlice(sortedMemberIDs, 0)
-
 				// partitions that were assigned to a different consumer last time
 				prevPartitions := make([]topicPartitionAssignment, 0)
 				for partition := range partitionsWithADifferentPreviousAssignment {
@@ -604,20 +608,21 @@ func sortPartitions(currentAssignment map[string][]topicPartitionAssignment, par
 				}
 
 				if len(prevPartitions) > 0 {
-					// if there is a partition of this consumer that was assigned to another consumer before mark it as good options for reassignment
+					// if there is a partition on this consumer that was assigned to another consumer before mark it as good options for reassignment
 					partition := prevPartitions[0]
 					prevPartitions = append(prevPartitions[:0], prevPartitions[1:]...)
 					assignments[memberID] = removeTopicPartitionFromMemberAssignments(assignments[memberID], partition)
 					sortedPartitions = append(sortedPartitions, partition)
-					sortedMemberIDs = append(sortedMemberIDs, memberID)
+					updatedMemberIDs = append(updatedMemberIDs, memberID)
 				} else if len(assignments[memberID]) > 0 {
 					// otherwise, mark any other one of the current partitions as a reassignment candidate
 					partition := assignments[memberID][0]
 					assignments[memberID] = append(assignments[memberID][:0], assignments[memberID][1:]...)
 					sortedPartitions = append(sortedPartitions, partition)
-					sortedMemberIDs = append(sortedMemberIDs, memberID)
+					updatedMemberIDs = append(updatedMemberIDs, memberID)
 				}
 			}
+			sortedMemberIDs = updatedMemberIDs
 		}
 
 		for partition := range partition2AllPotentialConsumers {
@@ -646,6 +651,10 @@ func sortMemberIDsByPartitionAssignments(assignments map[string][]topicPartition
 		sortedMemberIDs = append(sortedMemberIDs, memberID)
 	}
 	sort.SliceStable(sortedMemberIDs, func(i, j int) bool {
+		ret := len(assignments[sortedMemberIDs[i]]) - len(assignments[sortedMemberIDs[j]])
+		if ret == 0 {
+			return sortedMemberIDs[i] < sortedMemberIDs[j]
+		}
 		return len(assignments[sortedMemberIDs[i]]) < len(assignments[sortedMemberIDs[j]])
 	})
 	return sortedMemberIDs
