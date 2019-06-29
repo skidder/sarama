@@ -56,7 +56,7 @@ func (m *StickyAssignorUserDataV0) decode(pd packetDecoder) (err error) {
 
 func (m *StickyAssignorUserDataV0) partitions() []topicPartitionAssignment { return m.topicPartitions }
 func (m *StickyAssignorUserDataV0) hasGeneration() bool                    { return false }
-func (m *StickyAssignorUserDataV0) generation() int                        { return -1 }
+func (m *StickyAssignorUserDataV0) generation() int                        { return defaultGeneration }
 
 //StickyAssignorUserDataV1 holds topic partition information for an assignment
 type StickyAssignorUserDataV1 struct {
