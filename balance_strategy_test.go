@@ -1290,6 +1290,7 @@ func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 			s := &stickyBalanceStrategy{}
 			plan, err := s.Plan(tt.args.members, tt.args.topics)
 			verifyPlanIsBalancedAndSticky(t, s, tt.args.members, plan, err)
+			verifyFullyBalanced(t, plan)
 		})
 	}
 }
@@ -1378,6 +1379,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 	}
 	plan1, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
+	verifyFullyBalanced(t, plan1)
 
 	// PLAN 2
 	members["consumer1"] = ConsumerGroupMemberMetadata{
@@ -1392,6 +1394,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 
 	plan2, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
+	verifyFullyBalanced(t, plan2)
 
 	// PLAN 3
 	members["consumer1"] = ConsumerGroupMemberMetadata{
@@ -1406,6 +1409,7 @@ func Test_stickyBalanceStrategy_Plan_AddRemoveTopicTwoConsumers(t *testing.T) {
 
 	plan3, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan3, err)
+	verifyFullyBalanced(t, plan3)
 }
 
 func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testing.T) {
@@ -1695,6 +1699,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentUpdatedForDeletedTopic(t *testing
 
 	plan, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	verifyFullyBalanced(t, plan)
 	if (len(plan["consumer1"]["topic1"]) + len(plan["consumer1"]["topic3"])) != 101 {
 		t.Error("Incorrect number of partitions assigned")
 		return
@@ -1740,6 +1745,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 	}
 	plan, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	verifyFullyBalanced(t, plan)
 
 	// PLAN 2
 	members["consumer1"] = ConsumerGroupMemberMetadata{
@@ -1754,6 +1760,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 
 	plan2, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
+	verifyFullyBalanced(t, plan2)
 	if len(intersection(plan["consumer1"]["topic1"], plan2["consumer1"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
@@ -1774,6 +1781,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 
 	plan3, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan3, err)
+	verifyFullyBalanced(t, plan3)
 }
 
 func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testing.T) {
@@ -1787,6 +1795,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 	}
 	plan, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	verifyFullyBalanced(t, plan)
 
 	// PLAN 2
 	delete(members, "consumer1")
@@ -1798,6 +1807,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 
 	plan2, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
+	verifyFullyBalanced(t, plan2)
 	if len(intersection(plan["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
@@ -1817,6 +1827,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 	}
 	plan3, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan3, err)
+	verifyFullyBalanced(t, plan3)
 }
 func Test_stickyBalanceStrategy_Plan_AssignmentWithConflictingPreviousGenerations(t *testing.T) {
 	s := &stickyBalanceStrategy{}
@@ -1838,6 +1849,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithConflictingPreviousGeneration
 
 	plan, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	verifyFullyBalanced(t, plan)
 }
 
 func Test_stickyBalanceStrategy_Plan_SchemaBackwardCompatibility(t *testing.T) {
@@ -1857,6 +1869,7 @@ func Test_stickyBalanceStrategy_Plan_SchemaBackwardCompatibility(t *testing.T) {
 
 	plan, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	verifyFullyBalanced(t, plan)
 }
 
 func Test_stickyBalanceStrategy_Plan_ConflictingPreviousAssignments(t *testing.T) {
@@ -1875,6 +1888,7 @@ func Test_stickyBalanceStrategy_Plan_ConflictingPreviousAssignments(t *testing.T
 
 	plan, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	verifyFullyBalanced(t, plan)
 }
 
 func BenchmarkStickAssignmentWithLargeNumberOfConsumersAndTopics(b *testing.B) {
@@ -2103,7 +2117,7 @@ func encodeSubscriberPlanWithOldSchema(t *testing.T, assignments map[string][]in
 
 // verify that the plan is fully balanced, assumes that all consumers can
 // consume from the same set of topics
-func isFullyBalanced(plan BalanceStrategyPlan) bool {
+func verifyFullyBalanced(t *testing.T, plan BalanceStrategyPlan) {
 	min := math.MaxInt32
 	max := math.MinInt32
 	for _, topics := range plan {
@@ -2118,7 +2132,9 @@ func isFullyBalanced(plan BalanceStrategyPlan) bool {
 			max = assignedPartitionsCount
 		}
 	}
-	return (max - min) <= 1
+	if (max - min) > 1 {
+		t.Errorf("Plan partition assignment is not fully balanced: min=%d, max=%d", min, max)
+	}
 }
 
 func getRandomSublist(r *rand.Rand, s []string) []string {
