@@ -1295,6 +1295,127 @@ func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 	}
 }
 
+func Test_stickyBalanceStrategy_Plan_KIP54_ExampleOne(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic2", "topic3", "topic4"},
+		},
+		"consumer2": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic2", "topic3", "topic4"},
+		},
+		"consumer3": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic2", "topic3", "topic4"},
+		},
+	}
+	topics := map[string][]int32{
+		"topic1": []int32{0, 1},
+		"topic2": []int32{0, 1},
+		"topic3": []int32{0, 1},
+		"topic4": []int32{0, 1},
+	}
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
+	verifyFullyBalanced(t, plan1)
+
+	// PLAN 2
+	delete(members, "consumer1")
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2", "topic3", "topic4"},
+		UserData: encodeSubscriberPlan(t, plan1["consumer2"]),
+	}
+	members["consumer3"] = ConsumerGroupMemberMetadata{
+		Topics:   []string{"topic1", "topic2", "topic3", "topic4"},
+		UserData: encodeSubscriberPlan(t, plan1["consumer3"]),
+	}
+	plan2, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
+	verifyFullyBalanced(t, plan2)
+}
+
+func Test_stickyBalanceStrategy_Plan_KIP54_ExampleTwo(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+
+	// PLAN 1
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1"},
+		},
+		"consumer2": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic2"},
+		},
+		"consumer3": ConsumerGroupMemberMetadata{
+			Topics: []string{"topic1", "topic2", "topic3"},
+		},
+	}
+	topics := map[string][]int32{
+		"topic1": []int32{0},
+		"topic2": []int32{0, 1},
+		"topic3": []int32{0, 1, 2},
+	}
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
+	if len(plan1["consumer1"]["topic1"]) != 1 || len(plan1["consumer2"]["topic2"]) != 2 || len(plan1["consumer3"]["topic3"]) != 3 {
+		t.Error("Incorrect distribution of topic partition assignments")
+	}
+
+	// PLAN 2
+	delete(members, "consumer1")
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   members["consumer2"].Topics,
+		UserData: encodeSubscriberPlan(t, plan1["consumer2"]),
+	}
+	members["consumer3"] = ConsumerGroupMemberMetadata{
+		Topics:   members["consumer3"].Topics,
+		UserData: encodeSubscriberPlan(t, plan1["consumer3"]),
+	}
+	plan2, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
+	verifyFullyBalanced(t, plan2)
+	if len(plan2["consumer2"]["topic1"]) != 1 || len(plan2["consumer2"]["topic2"]) != 2 || len(plan2["consumer3"]["topic3"]) != 3 {
+		t.Error("Incorrect distribution of topic partition assignments")
+	}
+}
+
+func Test_stickyBalanceStrategy_Plan_KIP54_ExampleThree(t *testing.T) {
+	s := &stickyBalanceStrategy{}
+	topicNames := []string{"topic1", "topic2"}
+
+	// PLAN 1
+	members := map[string]ConsumerGroupMemberMetadata{
+		"consumer1": ConsumerGroupMemberMetadata{
+			Topics: topicNames,
+		},
+		"consumer2": ConsumerGroupMemberMetadata{
+			Topics: topicNames,
+		},
+	}
+	topics := map[string][]int32{
+		"topic1": []int32{0, 1},
+		"topic2": []int32{0, 1},
+	}
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
+
+	// PLAN 2
+	members["consumer1"] = ConsumerGroupMemberMetadata{
+		Topics: topicNames,
+	}
+	members["consumer2"] = ConsumerGroupMemberMetadata{
+		Topics:   topicNames,
+		UserData: encodeSubscriberPlan(t, plan1["consumer2"]),
+	}
+	members["consumer3"] = ConsumerGroupMemberMetadata{
+		Topics:   topicNames,
+		UserData: encodeSubscriberPlan(t, plan1["consumer3"]),
+	}
+	plan2, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
+	verifyFullyBalanced(t, plan2)
+}
+
 func Test_stickyBalanceStrategy_Plan_AddRemoveConsumerOneTopic(t *testing.T) {
 	s := &stickyBalanceStrategy{}
 
@@ -1433,8 +1554,8 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testi
 		topics[fmt.Sprintf("topic%d", i)] = partitions
 	}
 
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
 
 	for i := 0; i < 20; i++ {
 		topics := make([]string, 20)
@@ -1443,7 +1564,7 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerLeaves(t *testi
 		}
 		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
 			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
-			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+			UserData: encodeSubscriberPlan(t, plan1[fmt.Sprintf("consumer%d", i)]),
 		}
 	}
 	delete(members, "consumer10")
@@ -1466,8 +1587,8 @@ func Test_stickyBalanceStrategy_Plan_ReassignmentAfterOneConsumerAdded(t *testin
 	}
 	topics := map[string][]int32{"topic1": partitions}
 
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
 
 	// add a new consumer
 	members["consumer10"] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
@@ -1497,14 +1618,14 @@ func Test_stickyBalanceStrategy_Plan_SameSubscriptions(t *testing.T) {
 		topics[fmt.Sprintf("topic%d", i)] = partitions
 	}
 
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
 
 	// PLAN 2
 	for i := 0; i < 9; i++ {
 		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
 			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
-			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+			UserData: encodeSubscriberPlan(t, plan1[fmt.Sprintf("consumer%d", i)]),
 		}
 	}
 	delete(members, "consumer5")
@@ -1536,13 +1657,13 @@ func Test_stickyBalanceStrategy_Plan_LargeAssignmentWithMultipleConsumersLeaving
 		topics[fmt.Sprintf("topic%d", i)] = partitions
 	}
 
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
 
 	for i := 0; i < 200; i++ {
 		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
 			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
-			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+			UserData: encodeSubscriberPlan(t, plan1[fmt.Sprintf("consumer%d", i)]),
 		}
 	}
 	for i := 0; i < 50; i++ {
@@ -1569,12 +1690,12 @@ func Test_stickyBalanceStrategy_Plan_NewSubscription(t *testing.T) {
 		topics[fmt.Sprintf("topic%d", i)] = []int32{0}
 	}
 
-	plan, err := s.Plan(members, topics)
+	plan1, err := s.Plan(members, topics)
 	if err != nil {
 		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
 		return
 	}
-	verifyValidityAndBalance(t, members, plan)
+	verifyValidityAndBalance(t, members, plan1)
 
 	members["consumer0"] = ConsumerGroupMemberMetadata{Topics: []string{"topic1"}}
 
@@ -1667,8 +1788,8 @@ func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
 		"consumer4": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
 	}
 
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
 
 	// PLAN 2
 	// remove the potential group leader
@@ -1676,7 +1797,7 @@ func Test_stickyBalanceStrategy_Plan_Stickiness(t *testing.T) {
 	for i := 2; i <= 4; i++ {
 		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
 			Topics:   []string{"topic1"},
-			UserData: encodeSubscriberPlan(t, plan[fmt.Sprintf("consumer%d", i)]),
+			UserData: encodeSubscriberPlan(t, plan1[fmt.Sprintf("consumer%d", i)]),
 		}
 	}
 
@@ -1713,13 +1834,13 @@ func Test_stickyBalanceStrategy_Plan_NoExceptionRaisedWhenOnlySubscribedTopicDel
 	members := map[string]ConsumerGroupMemberMetadata{
 		"consumer1": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
 	}
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
 
 	// PLAN 2
 	members["consumer1"] = ConsumerGroupMemberMetadata{
 		Topics:   members["consumer1"].Topics,
-		UserData: encodeSubscriberPlan(t, plan["consumer1"]),
+		UserData: encodeSubscriberPlan(t, plan1["consumer1"]),
 	}
 
 	plan2, err := s.Plan(members, map[string][]int32{})
@@ -1743,28 +1864,28 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 		"consumer2": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
 		"consumer3": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
 	}
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
-	verifyFullyBalanced(t, plan)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
+	verifyFullyBalanced(t, plan1)
 
 	// PLAN 2
 	members["consumer1"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic1"},
-		UserData: encodeSubscriberPlanWithGeneration(t, plan["consumer1"], 1),
+		UserData: encodeSubscriberPlanWithGeneration(t, plan1["consumer1"], 1),
 	}
 	members["consumer2"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic1"},
-		UserData: encodeSubscriberPlanWithGeneration(t, plan["consumer2"], 1),
+		UserData: encodeSubscriberPlanWithGeneration(t, plan1["consumer2"], 1),
 	}
 	delete(members, "consumer3")
 
 	plan2, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
 	verifyFullyBalanced(t, plan2)
-	if len(intersection(plan["consumer1"]["topic1"], plan2["consumer1"]["topic1"])) != 2 {
+	if len(intersection(plan1["consumer1"]["topic1"], plan2["consumer1"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
-	if len(intersection(plan["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
+	if len(intersection(plan1["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
 
@@ -1776,7 +1897,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations1(t *testi
 	}
 	members["consumer3"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic1"},
-		UserData: encodeSubscriberPlanWithGeneration(t, plan["consumer3"], 1),
+		UserData: encodeSubscriberPlanWithGeneration(t, plan1["consumer3"], 1),
 	}
 
 	plan3, err := s.Plan(members, topics)
@@ -1793,29 +1914,29 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 		"consumer2": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
 		"consumer3": ConsumerGroupMemberMetadata{Topics: []string{"topic1"}},
 	}
-	plan, err := s.Plan(members, topics)
-	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
-	verifyFullyBalanced(t, plan)
+	plan1, err := s.Plan(members, topics)
+	verifyPlanIsBalancedAndSticky(t, s, members, plan1, err)
+	verifyFullyBalanced(t, plan1)
 
 	// PLAN 2
 	delete(members, "consumer1")
 	members["consumer2"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic1"},
-		UserData: encodeSubscriberPlanWithGeneration(t, plan["consumer2"], 1),
+		UserData: encodeSubscriberPlanWithGeneration(t, plan1["consumer2"], 1),
 	}
 	delete(members, "consumer3")
 
 	plan2, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan2, err)
 	verifyFullyBalanced(t, plan2)
-	if len(intersection(plan["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
+	if len(intersection(plan1["consumer2"]["topic1"], plan2["consumer2"]["topic1"])) != 2 {
 		t.Error("stickyBalanceStrategy.Plan() consumer1 didn't maintain partitions across reassignment")
 	}
 
 	// PLAN 3
 	members["consumer1"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic1"},
-		UserData: encodeSubscriberPlanWithGeneration(t, plan["consumer1"], 1),
+		UserData: encodeSubscriberPlanWithGeneration(t, plan1["consumer1"], 1),
 	}
 	members["consumer2"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic1"},
@@ -1823,7 +1944,7 @@ func Test_stickyBalanceStrategy_Plan_AssignmentWithMultipleGenerations2(t *testi
 	}
 	members["consumer3"] = ConsumerGroupMemberMetadata{
 		Topics:   []string{"topic1"},
-		UserData: encodeSubscriberPlanWithGeneration(t, plan["consumer3"], 1),
+		UserData: encodeSubscriberPlanWithGeneration(t, plan1["consumer3"], 1),
 	}
 	plan3, err := s.Plan(members, topics)
 	verifyPlanIsBalancedAndSticky(t, s, members, plan3, err)
