@@ -182,12 +182,10 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 		for _, topicSubscription := range meta.Topics {
 			// only evaluate topic subscriptions that are present in the supplied topics map
 			if _, found := topics[topicSubscription]; found {
-				for topic, partitions := range topics {
-					for _, partition := range partitions {
-						topicPartition := topicPartitionAssignment{Topic: topic, Partition: partition}
-						consumer2AllPotentialPartitions[memberID] = append(consumer2AllPotentialPartitions[memberID], topicPartition)
-						partition2AllPotentialConsumers[topicPartition] = append(partition2AllPotentialConsumers[topicPartition], memberID)
-					}
+				for _, partition := range topics[topicSubscription] {
+					topicPartition := topicPartitionAssignment{Topic: topicSubscription, Partition: partition}
+					consumer2AllPotentialPartitions[memberID] = append(consumer2AllPotentialPartitions[memberID], topicPartition)
+					partition2AllPotentialConsumers[topicPartition] = append(partition2AllPotentialConsumers[topicPartition], memberID)
 				}
 			}
 		}
@@ -243,7 +241,7 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 	// all invalid topic partitions and invalid consumers. Now we need to assign unassignedPartitions
 	// to consumers so that the topic partition assignments are as balanced as possible.
 
-	// a descending sorted set of consumers based on how many topic partitions are already assigned to them
+	// an ascending sorted set of consumers based on how many topic partitions are already assigned to them
 	sortedCurrentSubscriptions := sortMemberIDsByPartitionAssignments(currentAssignment)
 	s.balance(currentAssignment, prevAssignment, sortedPartitions, unassignedPartitions, sortedCurrentSubscriptions, consumer2AllPotentialPartitions, partition2AllPotentialConsumers, currentPartitionConsumer)
 
@@ -338,6 +336,7 @@ func getBalanceScore(assignment map[string][]topicPartitionAssignment) int {
 }
 
 func isBalanced(currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, allSubscriptions map[string][]topicPartitionAssignment) bool {
+	sortedCurrentSubscriptions = sortMemberIDsByPartitionAssignments(currentAssignment)
 	min := len(currentAssignment[sortedCurrentSubscriptions[0]])
 	max := len(currentAssignment[sortedCurrentSubscriptions[len(sortedCurrentSubscriptions)-1]])
 	if min >= max-1 {
@@ -560,7 +559,7 @@ func removeIndexFromPartitionSlice(s []topicPartitionAssignment, i int) []topicP
 func removeTopicPartitionFromMemberAssignments(assignments []topicPartitionAssignment, topic topicPartitionAssignment) []topicPartitionAssignment {
 	for i, assignment := range assignments {
 		if assignment == topic {
-			assignments = append(assignments[:i], assignments[i+1:]...)
+			return append(assignments[:i], assignments[i+1:]...)
 		}
 	}
 	return assignments
