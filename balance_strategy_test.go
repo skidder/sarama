@@ -1100,42 +1100,6 @@ func Test_assignPartition(t *testing.T) {
 	}
 }
 
-func Test_balanceStrategy_Plan(t *testing.T) {
-	type fields struct {
-		name   string
-		coreFn func(plan BalanceStrategyPlan, memberIDs []string, topic string, partitions []int32)
-	}
-	type args struct {
-		members map[string]ConsumerGroupMemberMetadata
-		topics  map[string][]int32
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    BalanceStrategyPlan
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &balanceStrategy{
-				name:   tt.fields.name,
-				coreFn: tt.fields.coreFn,
-			}
-			got, err := s.Plan(tt.args.members, tt.args.topics)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("balanceStrategy.Plan() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("balanceStrategy.Plan() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func Test_stickyBalanceStrategy_Plan(t *testing.T) {
 	type args struct {
 		members map[string]ConsumerGroupMemberMetadata
@@ -1913,13 +1877,74 @@ func Test_stickyBalanceStrategy_Plan_ConflictingPreviousAssignments(t *testing.T
 	verifyPlanIsBalancedAndSticky(t, s, members, plan, err)
 }
 
+func BenchmarkStickAssignmentWithLargeNumberOfConsumersAndTopics(b *testing.B) {
+	s := &stickyBalanceStrategy{}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	members := make(map[string]ConsumerGroupMemberMetadata, 20)
+	for i := 0; i < 200; i++ {
+		topics := make([]string, 200)
+		for j := 0; j < 200; j++ {
+			topics[j] = fmt.Sprintf("topic%d", j)
+		}
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: topics}
+	}
+	topics := make(map[string][]int32, 40)
+	for i := 0; i < 40; i++ {
+		partitionCount := r.Intn(20)
+		partitions := make([]int32, partitionCount)
+		for j := 0; j < partitionCount; j++ {
+			partitions[j] = int32(j)
+		}
+		topics[fmt.Sprintf("topic%d", i)] = partitions
+	}
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		s.Plan(members, topics)
+	}
+}
+
+func BenchmarkStickAssignmentWithLargeNumberOfConsumersAndTopicsAndExistingAssignments(b *testing.B) {
+	s := &stickyBalanceStrategy{}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	members := make(map[string]ConsumerGroupMemberMetadata, 20)
+	for i := 0; i < 200; i++ {
+		topics := make([]string, 200)
+		for j := 0; j < 200; j++ {
+			topics[j] = fmt.Sprintf("topic%d", j)
+		}
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{Topics: topics}
+	}
+	topics := make(map[string][]int32, 40)
+	for i := 0; i < 40; i++ {
+		partitionCount := r.Intn(20)
+		partitions := make([]int32, partitionCount)
+		for j := 0; j < partitionCount; j++ {
+			partitions[j] = int32(j)
+		}
+		topics[fmt.Sprintf("topic%d", i)] = partitions
+	}
+	plan, _ := s.Plan(members, topics)
+
+	for i := 0; i < 200; i++ {
+		members[fmt.Sprintf("consumer%d", i)] = ConsumerGroupMemberMetadata{
+			Topics:   members[fmt.Sprintf("consumer%d", i)].Topics,
+			UserData: encodeSubscriberPlanWithGenerationForBenchmark(b, plan[fmt.Sprintf("consumer%d", i)], 1),
+		}
+	}
+	for i := 0; i < 1; i++ {
+		delete(members, fmt.Sprintf("consumer%d", i))
+	}
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		s.Plan(members, topics)
+	}
+}
+
 func verifyPlanIsBalancedAndSticky(t *testing.T, s *stickyBalanceStrategy, members map[string]ConsumerGroupMemberMetadata, plan BalanceStrategyPlan, err error) {
 	if err != nil {
 		t.Errorf("stickyBalanceStrategy.Plan() error = %v", err)
-		return
-	}
-	if !isFullyBalanced(plan) {
-		t.Error("stickyBalanceStrategy.Plan() unbalanced")
 		return
 	}
 	if !s.movements.isSticky() {
@@ -2045,6 +2070,18 @@ func encodeSubscriberPlanWithGeneration(t *testing.T, assignments map[string][]i
 	if err != nil {
 		t.Errorf("encodeSubscriberPlan error = %v", err)
 		t.FailNow()
+	}
+	return userDataBytes
+}
+
+func encodeSubscriberPlanWithGenerationForBenchmark(b *testing.B, assignments map[string][]int32, generation int32) []byte {
+	userDataBytes, err := encode(&StickyAssignorUserDataV1{
+		Topics:     assignments,
+		Generation: generation,
+	}, nil)
+	if err != nil {
+		b.Errorf("encodeSubscriberPlan error = %v", err)
+		b.FailNow()
 	}
 	return userDataBytes
 }
