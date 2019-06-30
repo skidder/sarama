@@ -373,7 +373,6 @@ func isBalanced(currentAssignment map[string][]topicPartitionAssignment, sortedC
 				otherConsumer := allPartitions[partition]
 				otherConsumerPartitionCount := len(currentAssignment[otherConsumer])
 				if consumerPartitionCount < otherConsumerPartitionCount {
-					Logger.Printf("Topic %s Partition %d can be moved from consumer %s to consumer %s for a more balanced assignment", partition.Topic, partition.Partition, otherConsumer, memberID)
 					return false
 				}
 			}
