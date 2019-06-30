@@ -1900,7 +1900,9 @@ func BenchmarkStickAssignmentWithLargeNumberOfConsumersAndTopics(b *testing.B) {
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		s.Plan(members, topics)
+		if _, err := s.Plan(members, topics); err != nil {
+			b.Errorf("Error building plan in benchmark: %v", err)
+		}
 	}
 }
 
@@ -1938,7 +1940,9 @@ func BenchmarkStickAssignmentWithLargeNumberOfConsumersAndTopicsAndExistingAssig
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		s.Plan(members, topics)
+		if _, err := s.Plan(members, topics); err != nil {
+			b.Errorf("Error building plan in benchmark: %v", err)
+		}
 	}
 }
 
