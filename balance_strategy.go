@@ -154,20 +154,25 @@ func (s *stickyBalanceStrategy) Name() string { return "sticky" }
 
 // Plan implements BalanceStrategy.
 func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetadata, topics map[string][]int32) (BalanceStrategyPlan, error) {
+	// track partition movements during generation of the partition assignment plan
 	s.movements = partitionMovements{
 		Movements:                 make(map[topicPartitionAssignment]consumerPair),
 		PartitionMovementsByTopic: make(map[string]map[consumerPair]map[topicPartitionAssignment]bool),
 	}
+
+	// prepopulate the current assignment state from userdata on the consumer group members
 	currentAssignment, prevAssignment, err := prepopulateCurrentAssignments(members)
 	if err != nil {
 		return nil, err
 	}
-	var isFreshAssignment bool
+
+	// determine if we're dealing with a completely fresh assignment, or if there's existing assignment state
+	isFreshAssignment := false
 	if len(currentAssignment) == 0 {
 		isFreshAssignment = true
 	}
 
-	// a mapping of all topic partitions to all consumers that can be assigned to them
+	// create a mapping of all current topic partitions and the consumers that can be assigned to them
 	partition2AllPotentialConsumers := make(map[topicPartitionAssignment][]string)
 	for topic, partitions := range topics {
 		for _, partition := range partitions {
@@ -175,7 +180,8 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 		}
 	}
 
-	// a mapping of all consumers to all potential topic partitions that can be assigned to them
+	// create a mapping of all consumers to all potential topic partitions that can be assigned to them
+	// also, populate the mapping of partitions to potential consumers
 	consumer2AllPotentialPartitions := make(map[string][]topicPartitionAssignment, len(members))
 	for memberID, meta := range members {
 		consumer2AllPotentialPartitions[memberID] = make([]topicPartitionAssignment, 0)
@@ -196,14 +202,15 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 		}
 	}
 
-	// a mapping of partition to current consumer
+	// create a mapping of each partition to its current consumer, where possible
 	currentPartitionConsumer := make(map[topicPartitionAssignment]string, len(currentAssignment))
-	for memberID, subscriptions := range currentAssignment {
-		for _, partition := range subscriptions {
+	for memberID, partitions := range currentAssignment {
+		for _, partition := range partitions {
 			currentPartitionConsumer[partition] = memberID
 		}
 	}
 
+	// sort the topic partitions in order of priority for reassignment
 	sortedPartitions := sortPartitions(currentAssignment, prevAssignment, isFreshAssignment, partition2AllPotentialConsumers, consumer2AllPotentialPartitions)
 	unassignedPartitions := deepCopyPartitions(sortedPartitions)
 	for memberID, partitions := range currentAssignment {
@@ -246,7 +253,7 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 	s.balance(currentAssignment, prevAssignment, sortedPartitions, unassignedPartitions, sortedCurrentSubscriptions, consumer2AllPotentialPartitions, partition2AllPotentialConsumers, currentPartitionConsumer)
 
 	// Assemble plan
-	plan := make(BalanceStrategyPlan)
+	plan := make(BalanceStrategyPlan, len(currentAssignment))
 	for memberID, assignments := range currentAssignment {
 		if len(assignments) == 0 {
 			plan[memberID] = make(map[string][]int32, 0)
@@ -259,6 +266,7 @@ func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetad
 	return plan, nil
 }
 
+// Balance assignments across consumers for maximum fairness and stickiness.
 func (s *stickyBalanceStrategy) balance(currentAssignment map[string][]topicPartitionAssignment, prevAssignment map[topicPartitionAssignment]consumerGenerationPair, sortedPartitions []topicPartitionAssignment, unassignedPartitions []topicPartitionAssignment, sortedCurrentSubscriptions []string, consumer2AllPotentialPartitions map[string][]topicPartitionAssignment, partition2AllPotentialConsumers map[topicPartitionAssignment][]string, currentPartitionConsumer map[topicPartitionAssignment]string) {
 	initializing := false
 	if len(sortedCurrentSubscriptions) == 0 || len(currentAssignment[sortedCurrentSubscriptions[0]]) == 0 {
@@ -276,7 +284,7 @@ func (s *stickyBalanceStrategy) balance(currentAssignment map[string][]topicPart
 
 	// narrow down the reassignment scope to only those partitions that can actually be reassigned
 	for partition := range partition2AllPotentialConsumers {
-		if !canParticipateInReassignment(partition, partition2AllPotentialConsumers) {
+		if !canTopicPartitionParticipateInReassignment(partition, partition2AllPotentialConsumers) {
 			sortedPartitions = removeTopicPartitionFromMemberAssignments(sortedPartitions, partition)
 		}
 	}
@@ -335,6 +343,7 @@ func getBalanceScore(assignment map[string][]topicPartitionAssignment) int {
 	return int(score)
 }
 
+// Determine whether the current assignment plan is balanced.
 func isBalanced(currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, allSubscriptions map[string][]topicPartitionAssignment) bool {
 	sortedCurrentSubscriptions = sortMemberIDsByPartitionAssignments(currentAssignment)
 	min := len(currentAssignment[sortedCurrentSubscriptions[0]])
@@ -381,6 +390,7 @@ func isBalanced(currentAssignment map[string][]topicPartitionAssignment, sortedC
 	return true
 }
 
+// Reassign all topic partitions that need reassignment until balanced.
 func (s *stickyBalanceStrategy) performReassignments(reassignablePartitions []topicPartitionAssignment, currentAssignment map[string][]topicPartitionAssignment, prevAssignment map[topicPartitionAssignment]consumerGenerationPair, sortedCurrentSubscriptions []string, consumer2AllPotentialPartitions map[string][]topicPartitionAssignment, partition2AllPotentialConsumers map[topicPartitionAssignment][]string, currentPartitionConsumer map[topicPartitionAssignment]string) bool {
 	reassignmentPerformed := false
 	modified := false
@@ -432,6 +442,7 @@ func (s *stickyBalanceStrategy) performReassignments(reassignablePartitions []to
 	}
 }
 
+// Identify a new consumer for a topic partition and reassign it.
 func (s *stickyBalanceStrategy) reassignPartitionToNewConsumer(partition topicPartitionAssignment, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string, consumer2AllPotentialPartitions map[string][]topicPartitionAssignment) []string {
 	for _, anotherConsumer := range sortedCurrentSubscriptions {
 		if memberAssignmentsIncludeTopicPartition(consumer2AllPotentialPartitions[anotherConsumer], partition) {
@@ -441,6 +452,7 @@ func (s *stickyBalanceStrategy) reassignPartitionToNewConsumer(partition topicPa
 	return sortedCurrentSubscriptions
 }
 
+// Reassign a specific partition to a new consumer
 func (s *stickyBalanceStrategy) reassignPartition(partition topicPartitionAssignment, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string, newConsumer string) []string {
 	consumer := currentPartitionConsumer[partition]
 	// find the correct partition movement considering the stickiness requirement
@@ -448,6 +460,7 @@ func (s *stickyBalanceStrategy) reassignPartition(partition topicPartitionAssign
 	return s.processPartitionMovement(partitionToBeMoved, newConsumer, currentAssignment, sortedCurrentSubscriptions, currentPartitionConsumer)
 }
 
+// Track the movement of a topic partition after assignment
 func (s *stickyBalanceStrategy) processPartitionMovement(partition topicPartitionAssignment, newConsumer string, currentAssignment map[string][]topicPartitionAssignment, sortedCurrentSubscriptions []string, currentPartitionConsumer map[topicPartitionAssignment]string) []string {
 	oldConsumer := currentPartitionConsumer[partition]
 	s.movements.movePartition(partition, oldConsumer, newConsumer)
@@ -458,6 +471,7 @@ func (s *stickyBalanceStrategy) processPartitionMovement(partition topicPartitio
 	return sortMemberIDsByPartitionAssignments(currentAssignment)
 }
 
+// Determine whether a specific consumer should be considered for topic partition assignment.
 func canConsumerParticipateInReassignment(memberID string, currentAssignment map[string][]topicPartitionAssignment, consumer2AllPotentialPartitions map[string][]topicPartitionAssignment, partition2AllPotentialConsumers map[topicPartitionAssignment][]string) bool {
 	currentPartitions := currentAssignment[memberID]
 	currentAssignmentSize := len(currentPartitions)
@@ -470,14 +484,15 @@ func canConsumerParticipateInReassignment(memberID string, currentAssignment map
 		return true
 	}
 	for _, partition := range currentPartitions {
-		if canParticipateInReassignment(partition, partition2AllPotentialConsumers) {
+		if canTopicPartitionParticipateInReassignment(partition, partition2AllPotentialConsumers) {
 			return true
 		}
 	}
 	return false
 }
 
-func canParticipateInReassignment(partition topicPartitionAssignment, partition2AllPotentialConsumers map[topicPartitionAssignment][]string) bool {
+// Only consider reassigning those topic partitions that have two or more potential consumers.
+func canTopicPartitionParticipateInReassignment(partition topicPartitionAssignment, partition2AllPotentialConsumers map[topicPartitionAssignment][]string) bool {
 	return len(partition2AllPotentialConsumers[partition]) >= 2
 }
 
@@ -501,6 +516,7 @@ func assignPartition(partition topicPartitionAssignment, sortedCurrentSubscripti
 	return updatedSubscriptions
 }
 
+// Deserialize topic partition assignment data to aid with creation of a sticky assignment.
 func deserializeTopicPartitionAssignment(userDataBytes []byte) (StickyAssignorUserData, error) {
 	userDataV1 := &StickyAssignorUserDataV1{}
 	if err := decode(userDataBytes, userDataV1); err != nil {
@@ -615,7 +631,7 @@ func sortPartitions(currentAssignment map[string][]topicPartitionAssignment, par
 		}
 
 		for partition := range partition2AllPotentialConsumers {
-			var found bool
+			found := false
 			for _, p := range sortedPartitions {
 				if partition == p {
 					found = true
