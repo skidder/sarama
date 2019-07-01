@@ -156,7 +156,7 @@ func (s *stickyBalanceStrategy) Name() string { return "sticky" }
 func (s *stickyBalanceStrategy) Plan(members map[string]ConsumerGroupMemberMetadata, topics map[string][]int32) (BalanceStrategyPlan, error) {
 	s.movements = partitionMovements{
 		Movements:                 make(map[topicPartitionAssignment]consumerPair),
-		PartitionMovementsByTopic: make(map[string]map[consumerPair][]topicPartitionAssignment),
+		PartitionMovementsByTopic: make(map[string]map[consumerPair]map[topicPartitionAssignment]bool),
 	}
 	currentAssignment, prevAssignment, err := prepopulateCurrentAssignments(members)
 	if err != nil {
@@ -548,13 +548,6 @@ func removeIndexFromStringSlice(s []string, i int) []string {
 	return append(s[:i], s[i+1:]...)
 }
 
-func removeIndexFromPartitionSlice(s []topicPartitionAssignment, i int) []topicPartitionAssignment {
-	if len(s) == 0 {
-		return s
-	}
-	return append(s[:i], s[i+1:]...)
-}
-
 func removeTopicPartitionFromMemberAssignments(assignments []topicPartitionAssignment, topic topicPartitionAssignment) []topicPartitionAssignment {
 	for i, assignment := range assignments {
 		if assignment == topic {
@@ -820,7 +813,7 @@ type consumerPair struct {
 
 // partitionMovements maintains some data structures to simplify lookup of partition movements among consumers.
 type partitionMovements struct {
-	PartitionMovementsByTopic map[string]map[consumerPair][]topicPartitionAssignment
+	PartitionMovementsByTopic map[string]map[consumerPair]map[topicPartitionAssignment]bool
 	Movements                 map[topicPartitionAssignment]consumerPair
 }
 
@@ -829,7 +822,7 @@ func (p *partitionMovements) removeMovementRecordOfPartition(partition topicPart
 	delete(p.Movements, partition)
 
 	partitionMovementsForThisTopic := p.PartitionMovementsByTopic[partition.Topic]
-	partitionMovementsForThisTopic[pair] = removeTopicPartitionFromMemberAssignments(partitionMovementsForThisTopic[pair], partition)
+	delete(partitionMovementsForThisTopic[pair], partition)
 	if len(partitionMovementsForThisTopic[pair]) == 0 {
 		delete(partitionMovementsForThisTopic, pair)
 	}
@@ -842,13 +835,13 @@ func (p *partitionMovements) removeMovementRecordOfPartition(partition topicPart
 func (p *partitionMovements) addPartitionMovementRecord(partition topicPartitionAssignment, pair consumerPair) {
 	p.Movements[partition] = pair
 	if _, exists := p.PartitionMovementsByTopic[partition.Topic]; !exists {
-		p.PartitionMovementsByTopic[partition.Topic] = make(map[consumerPair][]topicPartitionAssignment)
+		p.PartitionMovementsByTopic[partition.Topic] = make(map[consumerPair]map[topicPartitionAssignment]bool)
 	}
 	partitionMovementsForThisTopic := p.PartitionMovementsByTopic[partition.Topic]
 	if _, exists := partitionMovementsForThisTopic[pair]; !exists {
-		partitionMovementsForThisTopic[pair] = make([]topicPartitionAssignment, 0)
+		partitionMovementsForThisTopic[pair] = make(map[topicPartitionAssignment]bool)
 	}
-	partitionMovementsForThisTopic[pair] = append(partitionMovementsForThisTopic[pair], partition)
+	partitionMovementsForThisTopic[pair][partition] = true
 }
 
 func (p *partitionMovements) movePartition(partition topicPartitionAssignment, oldConsumer, newConsumer string) {
@@ -894,7 +887,11 @@ func (p *partitionMovements) getTheActualPartitionToBeMoved(partition topicParti
 	if _, exists := partitionMovementsForThisTopic[reversePair]; !exists {
 		return partition
 	}
-	return partitionMovementsForThisTopic[reversePair][0]
+	var reversePairPartition topicPartitionAssignment
+	for otherPartition := range partitionMovementsForThisTopic[reversePair] {
+		reversePairPartition = otherPartition
+	}
+	return reversePairPartition
 }
 
 func (p *partitionMovements) isLinked(src, dst string, pairs []consumerPair, currentPath []string) ([]string, bool) {
