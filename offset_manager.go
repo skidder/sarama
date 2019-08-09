@@ -546,7 +546,9 @@ func (pom *partitionOffsetManager) AsyncClose() {
 }
 
 func (pom *partitionOffsetManager) Close() error {
+	Logger.Printf("Calling AsyncClose() on partition offset manager: %s/%d\n", pom.topic, pom.partition)
 	pom.AsyncClose()
+	Logger.Printf("Finished calling AsyncClose() on partition offset manager: %s/%d\n", pom.topic, pom.partition)
 
 	var errors ConsumerErrors
 	for err := range pom.errors {

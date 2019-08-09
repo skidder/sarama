@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rcrowley/go-metrics"
+	metrics "github.com/rcrowley/go-metrics"
 )
 
 // ConsumerMessage encapsulates a Kafka message returned by the consumer.
@@ -414,6 +414,7 @@ func (child *partitionConsumer) AsyncClose() {
 	// 'errors' channel (alternatively, if the child is already at the dispatcher for some reason, that will
 	// also just close itself)
 	child.closeOnce.Do(func() {
+		Logger.Printf("AsyncClose called on /%s/%d\n", child.topic, child.partition)
 		close(child.dying)
 	})
 }

@@ -624,9 +624,12 @@ func (s *consumerGroupSession) consume(topic string, partition int32) {
 	go func() {
 		select {
 		case <-s.ctx.Done():
+			Logger.Printf("Consumer group session context done, calling AsyncClose() claim: %s/%d\n", topic, partition)
 		case <-s.parent.closed:
+			Logger.Printf("Consumer group parent closed, calling AsyncClose() on claim: %s/%d\n", topic, partition)
 		}
 		claim.AsyncClose()
+		Logger.Printf("Finished calling AsyncClose() on claim: %s/%d\n", topic, partition)
 	}()
 
 	// start processing
@@ -635,6 +638,7 @@ func (s *consumerGroupSession) consume(topic string, partition int32) {
 	}
 
 	// ensure consumer is closed & drained
+	Logger.Printf("Ensuring consumer is closed and drained, calling AsyncClose() on claim: %s/%d\n", claim.Topic(), claim.Partition())
 	claim.AsyncClose()
 	for _, err := range claim.waitClosed() {
 		s.parent.handleError(err, topic, partition)
