@@ -782,12 +782,15 @@ type consumerGroupClaim struct {
 }
 
 func newConsumerGroupClaim(sess *consumerGroupSession, topic string, partition int32, offset int64) (*consumerGroupClaim, error) {
+	Logger.Printf("newConsumerGroupClaim(topic=%s, partition=%d, offset=%d): consuming partition", topic, partition, offset)
 	pcm, err := sess.parent.consumer.ConsumePartition(topic, partition, offset)
 	if err == ErrOffsetOutOfRange {
+		Logger.Printf("newConsumerGroupClaim(topic=%s, partition=%d, offset=%d): received ErrOffsetOutOfRange error, using default consumer offset instead: %d", topic, partition, offset, sess.parent.config.Consumer.Offsets.Initial)
 		offset = sess.parent.config.Consumer.Offsets.Initial
 		pcm, err = sess.parent.consumer.ConsumePartition(topic, partition, offset)
 	}
 	if err != nil {
+		Logger.Printf("newConsumerGroupClaim(topic=%s, partition=%d, offset=%d): received error after trying to use default consumer offset, returning error: %v", topic, partition, offset, err)
 		return nil, err
 	}
 
