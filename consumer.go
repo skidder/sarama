@@ -380,12 +380,15 @@ func (child *partitionConsumer) dispatch() error {
 func (child *partitionConsumer) chooseStartingOffset(offset int64) error {
 	newestOffset, err := child.consumer.client.GetOffset(child.topic, child.partition, OffsetNewest)
 	if err != nil {
+		Logger.Printf("partitionConsumer.chooseStartingOffset(topic=%s, partition=%d, offset=%d): error getting newest offset: %v", child.topic, child.partition, offset, err)
 		return err
 	}
 	oldestOffset, err := child.consumer.client.GetOffset(child.topic, child.partition, OffsetOldest)
 	if err != nil {
+		Logger.Printf("partitionConsumer.chooseStartingOffset(topic=%s, partition=%d, offset=%d): error getting oldest offset: %v", child.topic, child.partition, offset, err)
 		return err
 	}
+	Logger.Printf("partitionConsumer.chooseStartingOffset(topic=%s, partition=%d, offset=%d): oldest offset=%d, newest offset=%d", child.topic, child.partition, offset, oldestOffset, newestOffset)
 
 	switch {
 	case offset == OffsetNewest:
@@ -395,6 +398,7 @@ func (child *partitionConsumer) chooseStartingOffset(offset int64) error {
 	case offset >= oldestOffset && offset <= newestOffset:
 		child.offset = offset
 	default:
+		Logger.Printf("partitionConsumer.chooseStartingOffset(topic=%s, partition=%d, offset=%d, oldest offset=%d, newest offset=%d): returning ErrOffsetOutOfRange", child.topic, child.partition, offset, oldestOffset, newestOffset)
 		return ErrOffsetOutOfRange
 	}
 
