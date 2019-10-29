@@ -602,8 +602,12 @@ func (s *consumerGroupSession) consume(topic string, partition int32) {
 
 	// get next offset
 	offset := s.parent.config.Consumer.Offsets.Initial
+	Logger.Printf("consumerGroupSession.consume(topic=%s partition=%d): default initial offset=%d", topic, partition, offset)
 	if pom := s.offsets.findPOM(topic, partition); pom != nil {
 		offset, _ = pom.NextOffset()
+		Logger.Printf("consumerGroupSession.consume(topic=%s partition=%d): Kafka reported initial offset=%d", topic, partition, offset)
+	} else {
+		Logger.Printf("consumerGroupSession.consume(topic=%s partition=%d): POM was nil, using default initial offset", topic, partition)
 	}
 
 	// create new claim

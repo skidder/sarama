@@ -153,8 +153,10 @@ func (om *offsetManager) fetchInitialOffset(topic string, partition int32, retri
 
 	block := resp.GetBlock(topic, partition)
 	if block == nil {
+		Logger.Printf("offsetManager.fetchInitialOffset(topic=%s, partition=%d): response block was nil", topic, partition)
 		return 0, "", ErrIncompleteResponse
 	}
+	Logger.Printf("offsetManager.fetchInitialOffset(topic=%s, partition=%d): response block=%v", topic, partition, block)
 
 	switch block.Err {
 	case ErrNoError:
@@ -478,10 +480,14 @@ type partitionOffsetManager struct {
 }
 
 func (om *offsetManager) newPartitionOffsetManager(topic string, partition int32) (*partitionOffsetManager, error) {
+	Logger.Printf("offsetManager.newPartitionOffsetManager(topic=%s, partition=%d): fetching initial offset from Kafka", topic, partition)
 	offset, metadata, err := om.fetchInitialOffset(topic, partition, om.conf.Metadata.Retry.Max)
 	if err != nil {
+		Logger.Printf("offsetManager.newPartitionOffsetManager(topic=%s, partition=%d): error=%v", topic, partition, err)
 		return nil, err
 	}
+	Logger.Printf("offsetManager.newPartitionOffsetManager(topic=%s, partition=%d): offset=%d", topic, partition, offset)
+	Logger.Printf("offsetManager.newPartitionOffsetManager(topic=%s, partition=%d): metadata=%s", topic, partition, metadata)
 
 	return &partitionOffsetManager{
 		parent:    om,
